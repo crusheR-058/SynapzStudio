@@ -1,0 +1,5 @@
+# Don't upload these to Vercel
+bin/
+.screenshots/
+server/data.json
+*.log

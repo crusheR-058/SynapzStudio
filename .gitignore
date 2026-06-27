@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.vite
+.DS_Store
+.screenshots
+bin/
+server/data.json
+
+.vercel
+
+# Local environment files with secrets (keep .env.example tracked)
+.env
+.env.local
+.env.*.local

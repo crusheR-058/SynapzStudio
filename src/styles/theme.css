@@ -1,0 +1,96 @@
+/* Black & red theme — near-black surfaces, vivid red accents. Always dark. */
+:root {
+  --foreground: #ffffff;
+  --muted-foreground: #a0a0a8;
+
+  /* accent (default: vivid red). --accent-rgb drives every translucent accent
+     glow/border so a single theme swap recolors the whole UI. */
+  --accent-rgb: 255, 46, 76;
+  --primary: #ff2e4c;
+  --primary-hover: #ff5066;
+  --primary-foreground: #ffffff;
+  --accent-2: #ff7081;
+  --accent-2-hover: #ff8a98;
+  --play-gradient: linear-gradient(135deg, #ff3b4e 0%, #b00d22 100%);
+  --glow: rgba(var(--accent-rgb), 0.5); /* halo for accent shadows */
+
+  --online: #ff2e4c; /* active-nav indicator (uses the gradient) */
+  --info: #ff2e4c;
+
+  /* elevation ladder: bg #0A0A0C → window → card → hover (near-black) */
+  --window: #121214;
+  --panel: #17171b;
+  --panel-strong: #202026;
+  --panel-hover: #28282f;
+  --hairline: rgba(255, 255, 255, 0.07);
+
+  --radius: 0.75rem;
+
+  /* legacy aliases still referenced by some components */
+  --background: #0a0a0c;
+  --card: #17171b;
+  --card-foreground: #ffffff;
+  --secondary: #17171b;
+  --secondary-foreground: #ffffff;
+  --muted: #17171b;
+  --accent: #ff2e4c;
+  --accent-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.07);
+}
+
+.dark {
+  --foreground: #ffffff;
+  --muted-foreground: #a0a0a8;
+  --primary: #ff2e4c;
+  --primary-hover: #ff5066;
+  --accent-2: #ff7081;
+  --online: #ff2e4c;
+  --border: rgba(255, 255, 255, 0.07);
+  --radius: 0.75rem;
+}
+
+/* Accent themes — set [data-accent] on <html> to recolor the whole UI. */
+html[data-accent='ocean'] {
+  --accent-rgb: 45, 140, 255;
+  --primary: #2d8cff;
+  --primary-hover: #5aa6ff;
+  --accent: #2d8cff;
+  --accent-2: #6db3ff;
+  --accent-2-hover: #8cc4ff;
+  --online: #2d8cff;
+  --info: #2d8cff;
+  --play-gradient: linear-gradient(135deg, #3b9eff 0%, #0d52b0 100%);
+}
+html[data-accent='emerald'] {
+  --accent-rgb: 32, 201, 120;
+  --primary: #20c978;
+  --primary-hover: #44dd93;
+  --accent: #20c978;
+  --accent-2: #5fe0a0;
+  --accent-2-hover: #7fe9b5;
+  --online: #20c978;
+  --info: #20c978;
+  --play-gradient: linear-gradient(135deg, #2bd982 0%, #0a7a45 100%);
+}
+html[data-accent='violet'] {
+  --accent-rgb: 168, 85, 247;
+  --primary: #a855f7;
+  --primary-hover: #bd77ff;
+  --accent: #a855f7;
+  --accent-2: #c89bff;
+  --accent-2-hover: #d6b3ff;
+  --online: #a855f7;
+  --info: #a855f7;
+  --play-gradient: linear-gradient(135deg, #b06bff 0%, #6d1fb0 100%);
+}
+html[data-accent='sunset'] {
+  --accent-rgb: 255, 138, 40;
+  --primary: #ff8a28;
+  --primary-hover: #ffa450;
+  --accent: #ff8a28;
+  --accent-2: #ffb16b;
+  --accent-2-hover: #ffc48f;
+  --online: #ff8a28;
+  --info: #ff8a28;
+  --play-gradient: linear-gradient(135deg, #ff9b3b 0%, #c25a0d 100%);
+}
