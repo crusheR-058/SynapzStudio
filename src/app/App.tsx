@@ -63,6 +63,7 @@ import {
   X,
   Youtube,
 } from 'lucide-react'
+import { Analytics } from '@vercel/analytics/react'
 import { EQ_BANDS, EQ_PRESETS, PlayerProvider, usePlayer } from './player'
 import { AuthProvider, useAuth } from './auth'
 import { PlaylistsProvider, usePlaylists, type UserPlaylist } from './playlists'
@@ -4198,6 +4199,7 @@ export default function App() {
   }, [])
   return (
     <AuthProvider>
+      <Analytics />
       <Gate />
     </AuthProvider>
   )
