@@ -89,6 +89,7 @@ import { PODCAST_TRACKS, podcastsByCategory } from '../lib/podcasts'
 import { stationByName } from '../lib/stations'
 import { RADIO_STATIONS } from '../lib/radio'
 import { cloudAddToPlaylist, cloudFetchHistory, cloudFetchPublicPlaylist } from '../lib/cloud'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 
 /* ------------------------------------------------------------------ utils */
 
@@ -4199,6 +4200,7 @@ export default function App() {
   return (
     <AuthProvider>
       <Gate />
+      <SpeedInsights />
     </AuthProvider>
   )
 }
