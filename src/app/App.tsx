@@ -4365,6 +4365,74 @@ function Gate() {
   )
 }
 
+// Cinematic intro on load: the equalizer mark draws itself, "Synapz" rises
+// letter by letter, an underline sweeps in, then the veil lifts to reveal the
+// app. Click anywhere to skip. Respects prefers-reduced-motion.
+function SynapzIntro() {
+  const [leaving, setLeaving] = useState(false)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const hold = reduce ? 500 : 2600
+    const t1 = setTimeout(() => setLeaving(true), hold)
+    const t2 = setTimeout(() => setDone(true), hold + 850)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [])
+
+  if (done) return null
+
+  const skip = () => {
+    setLeaving(true)
+    setTimeout(() => setDone(true), 850)
+  }
+
+  return (
+    <div className={`intro ${leaving ? 'intro--leave' : ''}`} onClick={skip} role="presentation">
+      <div className="intro__stage">
+        <svg className="intro__mark" viewBox="0 0 64 64" width="76" height="76" aria-hidden>
+          <defs>
+            <linearGradient id="intro-g" x1="8" y1="6" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#ff3b4e" />
+              <stop offset="1" stopColor="#b00d22" />
+            </linearGradient>
+          </defs>
+          <circle className="intro__ring" cx="32" cy="32" r="30" />
+          <path
+            className="intro__wave"
+            d="M14 41 L24 26 L33 35 L42 24 L50 31"
+            fill="none"
+            stroke="url(#intro-g)"
+            strokeWidth="3.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <g className="intro__dots" fill="#ff5066">
+            <circle cx="14" cy="41" r="3.4" />
+            <circle cx="24" cy="26" r="3.9" />
+            <circle cx="33" cy="35" r="3.3" />
+            <circle cx="42" cy="24" r="3.9" />
+            <circle cx="50" cy="31" r="3.4" />
+          </g>
+        </svg>
+
+        <div className="intro__word" aria-label="Synapz">
+          {'Synapz'.split('').map((c, i) => (
+            <span key={i} style={{ animationDelay: `${0.6 + i * 0.06}s` }}>
+              {c}
+            </span>
+          ))}
+        </div>
+        <div className="intro__sub">MUSIC</div>
+        <div className="intro__line" />
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   useEffect(() => {
     warmup()
@@ -4376,6 +4444,7 @@ export default function App() {
   }, [])
   return (
     <AuthProvider>
+      <SynapzIntro />
       <Gate />
     </AuthProvider>
   )
