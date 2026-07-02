@@ -64,7 +64,7 @@ import {
   X,
   Youtube,
 } from 'lucide-react'
-import { EQ_BANDS, EQ_PRESETS, PlayerProvider, usePlayer } from './player'
+import { PlayerProvider, usePlayer } from './player'
 import { AuthProvider, useAuth } from './auth'
 import { PlaylistsProvider, usePlaylists, type UserPlaylist } from './playlists'
 import type { Playlist, Track, View } from '../lib/types'
@@ -3371,11 +3371,6 @@ function ExtrasMenu({ onClose }: { onClose: () => void }) {
     setRate,
     crossfade,
     setCrossfade,
-    eqEnabled,
-    setEqEnabled,
-    eqGains,
-    setEqGain,
-    setEqPreset,
     sleep,
     setSleepMinutes,
     setSleepEndOfTrack,
@@ -3500,60 +3495,13 @@ function ExtrasMenu({ onClose }: { onClose: () => void }) {
         />
       </div>
 
-      <div className={`exmenu__sec ${!canTuneAudio ? 'exmenu__sec--locked' : ''}`}>
-        <div className="exmenu__title">
-          <span>
-            <SlidersHorizontal size={14} /> Equalizer
-          </span>
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={eqEnabled}
-              disabled={!canTuneAudio}
-              onChange={(e) => setEqEnabled(e.target.checked)}
-            />
-            <span className="switch__sl" />
-          </label>
-        </div>
-        <div className="chips">
-          {Object.keys(EQ_PRESETS).map((p) => (
-            <button
-              key={p}
-              className="exchip"
-              disabled={!canTuneAudio}
-              onClick={() => setEqPreset(p)}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-        <div className={`eqbands ${eqEnabled && canTuneAudio ? '' : 'is-off'}`}>
-          {EQ_BANDS.map((f, i) => (
-            <div className="eqband" key={f}>
-              <input
-                className="eqband__sl"
-                type="range"
-                min={-12}
-                max={12}
-                step={1}
-                value={eqGains[i] ?? 0}
-                disabled={!eqEnabled || !canTuneAudio}
-                onChange={(e) => setEqGain(i, Number(e.target.value))}
-                aria-label={`${f} Hz`}
-              />
-              <span className="eqband__hz">{f >= 1000 ? `${f / 1000}k` : f}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {!canTuneAudio && (
         <div className="exmenu__locked">
           <Lock size={13} />
           <span>
-            Equalizer &amp; crossfade work on <b>Audius</b> tracks. YouTube songs
-            (Bollywood, podcasts, radio &amp; most search results) play through YouTube&rsquo;s own
-            player, which doesn&rsquo;t let apps adjust the sound.
+            Crossfade works on <b>Audius</b> tracks. YouTube songs (Bollywood, podcasts, radio
+            &amp; most search results) play through YouTube&rsquo;s own player, which doesn&rsquo;t
+            let apps adjust the sound.
           </span>
         </div>
       )}
@@ -3751,7 +3699,7 @@ function NowPlaying() {
                 className={`pbtn ${extrasOpen ? 'on' : ''}`}
                 onClick={() => setExtrasOpen((o) => !o)}
                 aria-label="Playback settings"
-                title="Sleep timer, speed, crossfade & equalizer"
+                title="Sleep timer, speed & crossfade"
               >
                 <SlidersHorizontal size={18} />
               </button>
@@ -3869,7 +3817,7 @@ function Player() {
                 className={`pbtn ${extrasOpen ? 'on' : ''}`}
                 onClick={() => setExtrasOpen((o) => !o)}
                 aria-label="Playback settings"
-                title="Sleep timer, speed, crossfade & equalizer"
+                title="Sleep timer, speed & crossfade"
               >
                 <SlidersHorizontal size={16} />
               </button>
@@ -4365,7 +4313,7 @@ function Gate() {
   )
 }
 
-// Cinematic intro on load: the equalizer mark draws itself, "Synapz" rises
+// Cinematic intro on load: the brand mark draws itself, "Synapz" rises
 // letter by letter, an underline sweeps in, then the veil lifts to reveal the
 // app. Click anywhere to skip. Respects prefers-reduced-motion.
 function SynapzIntro() {

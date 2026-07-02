@@ -2309,41 +2309,6 @@ input {
   transform: translateX(16px);
 }
 
-/* equalizer bands (vertical sliders) */
-.eqbands {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 4px;
-  padding: 8px 2px 0;
-  transition: opacity 0.15s;
-}
-.eqbands.is-off {
-  opacity: 0.4;
-}
-.eqband {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-}
-.eqband__sl {
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 6px;
-  height: 84px;
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-.eqband__hz {
-  font-size: 9px;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
-}
-
 /* --- queue / up-next slide-out panel --- */
 .queuepanel {
   position: absolute;

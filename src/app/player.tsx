@@ -43,8 +43,8 @@ declare global {
 function isIframeTrack(t: Track | null): boolean {
   return !!t && t.source === 'youtube' && !t.streamUrl
 }
-// Crossfade / EQ (Web Audio) only work for tracks that play through an <audio>
-// element — i.e. NOT the YouTube IFrame. This is the gate for those features.
+// Crossfade only works for tracks that play through an <audio> element — i.e.
+// NOT the YouTube IFrame. This is the gate for that feature.
 function isAudioElTrack(t: Track | null): boolean {
   return !!t && !isIframeTrack(t) && !!t.streamUrl
 }
@@ -69,18 +69,6 @@ function dayKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
     d.getDate(),
   ).padStart(2, '0')}`
-}
-
-// 10-band graphic equalizer (ISO octave centres).
-export const EQ_BANDS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-export const EQ_PRESETS: Record<string, number[]> = {
-  Flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  'Bass boost': [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
-  'Treble boost': [0, 0, 0, 0, 0, 1, 3, 5, 6, 7],
-  Vocal: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1],
-  'Lo-fi': [4, 3, 1, 0, -2, -3, -5, -7, -9, -10],
-  Rock: [5, 4, 2, 0, -1, 0, 2, 4, 5, 5],
-  Electronic: [6, 5, 1, 0, -2, 1, 0, 2, 5, 6],
 }
 
 export interface SleepState {
@@ -108,10 +96,8 @@ interface PlayerState {
   // premium-style playback extras
   rate: number // playback speed
   crossfade: number // seconds, 0 = off
-  eqEnabled: boolean
-  eqGains: number[]
   sleep: SleepState
-  canTuneAudio: boolean // current track supports crossfade/EQ (audio element)
+  canTuneAudio: boolean // current track supports crossfade (audio element)
   autoplay: boolean // keep playing similar songs when the queue ends
 }
 
@@ -139,15 +125,10 @@ interface PlayerActions {
   // playback extras
   setRate: (r: number) => void
   setCrossfade: (s: number) => void
-  setEqEnabled: (on: boolean) => void
-  setEqGain: (band: number, db: number) => void
-  setEqPreset: (name: string) => void
   setSleepMinutes: (min: number) => void
   setSleepEndOfTrack: () => void
   clearSleep: () => void
   setAutoplay: (on: boolean) => void
-  // returns the Web Audio analyser (for the visualizer); null for IFrame tracks
-  getAnalyser: () => AnalyserNode | null
 }
 
 type PlayerContextValue = PlayerState & PlayerActions
@@ -162,7 +143,6 @@ const LS = {
   stats: 'synapz:stats',
   rate: 'synapz:rate',
   crossfade: 'synapz:crossfade',
-  eq: 'synapz:eq',
   autoplay: 'synapz:autoplay',
 }
 
@@ -192,11 +172,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const mk = () => {
       const a = new Audio()
       a.preload = 'auto'
-      // Required so the Web Audio graph (EQ / visualizer) can read the samples.
-      // Without it, routing a cross-origin stream through createMediaElementSource
-      // produces silence (CORS-tainted). Audius + SomaFM both send
-      // Access-Control-Allow-Origin: *, so this is safe for every stream we play.
-      a.crossOrigin = 'anonymous'
       return a
     }
     return [mk(), mk()]
@@ -224,8 +199,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const [rate, setRateState] = useState<number>(() => load(LS.rate, 1))
   const [crossfade, setCrossfadeState] = useState<number>(() => load(LS.crossfade, 0))
-  const [eqEnabled, setEqEnabledState] = useState(false)
-  const [eqGains, setEqGains] = useState<number[]>(() => load(LS.eq, EQ_PRESETS.Flat))
   const [sleep, setSleep] = useState<SleepState>({ endsAt: null, endOfTrack: false })
   const [autoplay, setAutoplayState] = useState<boolean>(() => load(LS.autoplay, true))
 
@@ -245,7 +218,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const volLevelRef = useRef(volume) // 0-100, stored level (ignores mute)
   const rateRef = useRef(rate)
   const crossfadeRef = useRef(crossfade)
-  const eqGainsRef = useRef(eqGains)
   const sleepRef = useRef(sleep)
   const autoplayRef = useRef(autoplay)
   const radioLoadingRef = useRef(false)
@@ -261,68 +233,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => void (currentTrackRef.current = currentTrack), [currentTrack])
   useEffect(() => void (rateRef.current = rate), [rate])
   useEffect(() => void (crossfadeRef.current = crossfade), [crossfade])
-  useEffect(() => void (eqGainsRef.current = eqGains), [eqGains])
   useEffect(() => void (sleepRef.current = sleep), [sleep])
   useEffect(() => void (autoplayRef.current = autoplay), [autoplay])
-
-  // --- Web Audio equalizer ------------------------------------------------
-  // The graph is built lazily the first time EQ is switched on (it needs a user
-  // gesture), then stays wired. "Off" just flattens every band to 0 dB.
-  const acRef = useRef<AudioContext | null>(null)
-  const filtersRef = useRef<BiquadFilterNode[]>([])
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const srcRef = useRef<Map<HTMLAudioElement, MediaElementAudioSourceNode>>(new Map())
-
-  const ensureGraph = useCallback(() => {
-    if (acRef.current) return acRef.current
-    const AC = window.AudioContext || window.webkitAudioContext
-    if (!AC) return null
-    const ac = new AC()
-    const filters = EQ_BANDS.map((f, i) => {
-      const filt = ac.createBiquadFilter()
-      filt.type = i === 0 ? 'lowshelf' : i === EQ_BANDS.length - 1 ? 'highshelf' : 'peaking'
-      filt.frequency.value = f
-      filt.Q.value = 1
-      filt.gain.value = 0
-      return filt
-    })
-    for (let i = 0; i < filters.length - 1; i++) filters[i].connect(filters[i + 1])
-    const last = filters[filters.length - 1]
-    last.connect(ac.destination)
-    // Extra analyser TAP for the visualizer — does NOT feed the destination, so
-    // the audio path above is unchanged (no double audio, no risk to playback).
-    try {
-      const an = ac.createAnalyser()
-      an.fftSize = 128
-      an.smoothingTimeConstant = 0.8
-      last.connect(an)
-      analyserRef.current = an
-    } catch {
-      /* analyser is optional */
-    }
-    filtersRef.current = filters
-    // Route both decks through the chain. A MediaElementSource can only be made
-    // once per element, so we cache it.
-    decks.forEach((d) => {
-      try {
-        const node = ac.createMediaElementSource(d)
-        node.connect(filters[0])
-        srcRef.current.set(d, node)
-      } catch {
-        /* already connected */
-      }
-    })
-    acRef.current = ac
-    return ac
-  }, [decks])
-
-  const applyEq = useCallback((gains: number[], on: boolean) => {
-    const filters = filtersRef.current
-    if (!filters.length) return
-    filters.forEach((f, i) => {
-      f.gain.value = on ? gains[i] || 0 : 0
-    })
-  }, [])
 
   // --- YouTube IFrame engine ---------------------------------------------
   const mountRef = useRef<HTMLDivElement>(null)
@@ -902,7 +814,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       else if (queueRef.current.length) playAt(0)
       return
     }
-    acRef.current?.resume?.().catch(() => {})
     if (isIframeTrack(t)) {
       const p = ytRef.current
       if (!p) return
@@ -1043,44 +954,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     crossfadeRef.current = clamped
     save(LS.crossfade, clamped)
   }, [])
-  const setEqEnabled = useCallback(
-    (on: boolean) => {
-      if (on) {
-        const ac = ensureGraph()
-        ac?.resume?.().catch(() => {})
-      }
-      setEqEnabledState(on)
-      applyEq(eqGainsRef.current, on)
-    },
-    [applyEq, ensureGraph],
-  )
-  const setEqGain = useCallback(
-    (band: number, db: number) => {
-      setEqGains((g) => {
-        const updated = g.slice()
-        updated[band] = db
-        eqGainsRef.current = updated
-        save(LS.eq, updated)
-        return updated
-      })
-      const f = filtersRef.current[band]
-      if (f) f.gain.value = db
-    },
-    [],
-  )
-  const setEqPreset = useCallback(
-    (name: string) => {
-      const gains = EQ_PRESETS[name] || EQ_PRESETS.Flat
-      setEqGains(gains)
-      eqGainsRef.current = gains
-      save(LS.eq, gains)
-      ensureGraph()
-      applyEq(gains, true)
-      setEqEnabledState(true)
-      acRef.current?.resume?.().catch(() => {})
-    },
-    [applyEq, ensureGraph],
-  )
   const setSleepMinutes = useCallback((min: number) => {
     setSleep({ endsAt: Date.now() + min * 60_000, endOfTrack: false })
   }, [])
@@ -1094,19 +967,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     autoplayRef.current = on
     save(LS.autoplay, on)
   }, [])
-
-  // Build (if needed) and return the analyser tap for the visualizer. Returns
-  // null for IFrame (YouTube) tracks whose audio isn't routed through Web Audio.
-  const getAnalyser = useCallback((): AnalyserNode | null => {
-    if (!isAudioElTrack(currentTrackRef.current)) return null
-    try {
-      ensureGraph()
-      acRef.current?.resume?.()
-    } catch {
-      /* noop */
-    }
-    return analyserRef.current
-  }, [ensureGraph])
 
   const setVolume = useCallback((v: number) => {
     const clamped = Math.max(0, Math.min(100, v))
@@ -1345,8 +1205,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     error,
     rate,
     crossfade,
-    eqEnabled,
-    eqGains,
     sleep,
     canTuneAudio: isAudioElTrack(currentTrack),
     autoplay,
@@ -1371,14 +1229,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     playUpNext,
     setRate,
     setCrossfade,
-    setEqEnabled,
-    setEqGain,
-    setEqPreset,
     setSleepMinutes,
     setSleepEndOfTrack,
     clearSleep,
     setAutoplay,
-    getAnalyser,
   }
 
   return (
