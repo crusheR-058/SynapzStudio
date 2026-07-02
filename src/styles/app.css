@@ -2676,16 +2676,31 @@ input {
 }
 
 @media (max-width: 920px) {
+  /* Stack the two columns in normal document flow. Previously this switched to a
+     single-column GRID but kept align-items:center from the base rule — with the
+     lyrics column far taller than the viewport, centering pulled it up over the
+     artwork/controls (the overlap bug). Flexbox column stacks them safely. */
   .nowfs__body {
-    grid-template-columns: 1fr;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
     overflow-y: auto;
     gap: 24px;
   }
   .nowfs__right {
+    flex: 0 0 auto;
     height: auto;
     max-height: none;
     min-height: 340px;
+  }
+  /* Let the lyrics/queue flow at natural height inside the single page scroll
+     instead of a nested percentage-height scroll box that can collapse. */
+  .nowfs__panel {
+    overflow: visible;
+  }
+  .lyrics {
+    height: auto;
+    overflow: visible;
   }
 }
 
