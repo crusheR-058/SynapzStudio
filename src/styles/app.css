@@ -3071,8 +3071,18 @@ input {
   .qrow__actions {
     opacity: 1;
   }
+  .card__play {
+    opacity: 1;
+    transform: none;
+  }
   .qrow__grip {
     display: none;
+  }
+
+  /* keep the toast above the mini player + bottom nav stack */
+  .toast {
+    bottom: calc(148px + env(safe-area-inset-bottom));
+    max-width: 92vw;
   }
 
   /* extras popover: anchor it as a near-full-width sheet so it never clips */

@@ -94,6 +94,8 @@ import { cloudAddToPlaylist, cloudFetchHistory, cloudFetchPublicPlaylist } from 
 
 /* ------------------------------------------------------------------ utils */
 
+const isCoarsePointer = () => window.matchMedia?.('(hover: none) and (pointer: coarse)').matches
+
 function fmtTime(sec: number): string {
   if (!sec || !Number.isFinite(sec)) return '0:00'
   const m = Math.floor(sec / 60)
@@ -694,7 +696,13 @@ function TrackCard({ track, context }: { track: Track; context: Track[] }) {
   const { playContext, currentTrack, isPlaying } = usePlayer()
   const isCurrent = currentTrack?.id === track.id
   return (
-    <div className="card" onDoubleClick={() => playContext(context, track.id)}>
+    <div
+      className="card"
+      onDoubleClick={() => playContext(context, track.id)}
+      onClick={() => {
+        if (isCoarsePointer()) playContext(context, track.id)
+      }}
+    >
       <div className="card__art">
         <Cover src={track.artwork} alt={track.title} />
         {track.source === 'youtube' && (
@@ -704,7 +712,10 @@ function TrackCard({ track, context }: { track: Track; context: Track[] }) {
         )}
         <button
           className={`card__play ${isCurrent && isPlaying ? 'is-current' : ''}`}
-          onClick={() => playContext(context, track.id)}
+          onClick={(e) => {
+            e.stopPropagation()
+            playContext(context, track.id)
+          }}
           aria-label={`Play ${track.title}`}
         >
           {isCurrent && isPlaying ? <Pause size={18} fill="#fff" /> : <Play size={18} fill="#fff" />}
@@ -801,7 +812,12 @@ function TrackRow({
           </>
         )}
       </div>
-      <div className="trow__main">
+      <div
+        className="trow__main"
+        onClick={() => {
+          if (isCoarsePointer()) playContext(context, track.id)
+        }}
+      >
         <Cover src={track.artwork} alt={track.title} className="trow__art" />
         <div className="trow__meta">
           <div className={`trow__title ${isCurrent ? 'accent' : ''}`} title={track.title}>
