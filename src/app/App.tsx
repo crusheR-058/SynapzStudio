@@ -16,6 +16,7 @@ import {
   Clock3,
   Disc3,
   Download,
+  Film,
   Gauge,
   GripVertical,
   Headphones,
@@ -85,6 +86,7 @@ import {
 } from '../lib/audius'
 import { fetchPopular, searchYT } from '../lib/youtube'
 import { BOLLYWOOD_TRACKS, bollywoodByCategory } from '../lib/bollywood'
+import { HOLLYWOOD_TRACKS, HOLLYWOOD_ARTISTS, hollywoodByArtist } from '../lib/hollywood'
 import { PODCAST_TRACKS, podcastsByCategory } from '../lib/podcasts'
 import { stationByName } from '../lib/stations'
 import { RADIO_STATIONS } from '../lib/radio'
@@ -177,8 +179,9 @@ function applyAccent(key: string) {
   }
 }
 
-const TAGS: { emoji: string; label: string; genre?: string; hindi?: boolean }[] = [
+const TAGS: { emoji: string; label: string; genre?: string; hindi?: boolean; hollywood?: boolean }[] = [
   { emoji: '🎬', label: 'Bollywood', hindi: true },
+  { emoji: '🌟', label: 'Hollywood', hollywood: true },
   { emoji: '🪕', label: 'Punjabi', hindi: true },
   { emoji: '🎸', label: 'Acoustic', genre: 'Acoustic' },
   { emoji: '🎹', label: 'Piano jazz', genre: 'Jazz' },
@@ -207,6 +210,13 @@ const HINDI_CHIPS: { label: string; q: string }[] = [
   { label: 'Lo-Fi Hindi', q: 'hindi lofi song slowed reverb' },
   { label: 'Party', q: 'bollywood party dance song official video' },
 ]
+
+// Hollywood / English chips = one per artist in the baked catalog. Filtering is
+// zero-quota (baked); the live query is only used as a fallback if a chip is thin.
+const HOLLYWOOD_CHIPS: { label: string; q: string }[] = HOLLYWOOD_ARTISTS.map((a) => ({
+  label: a,
+  q: `${a} official audio song`,
+}))
 
 // Indian podcasts (played from YouTube — full episodes, so the player search
 // allows long videos). Each chip is a show / category → a YouTube search.
@@ -345,6 +355,8 @@ function sectionForView(v: View): string {
       return 'playlists'
     case 'hindi':
       return 'hindi'
+    case 'hollywood':
+      return 'hollywood'
     case 'podcasts':
       return 'podcasts'
     case 'radio':
@@ -1641,6 +1653,102 @@ function HindiView() {
   )
 }
 
+// Hollywood / English songs — same baked + live-fallback pattern as HindiView,
+// but chips are ARTISTS and "All" spans the whole catalog.
+function HollywoodView() {
+  // chip 0 = "All"; chips 1.. map to HOLLYWOOD_CHIPS[chip-1] (one per artist).
+  const [chip, setChip] = useState(0)
+  const [live, setLive] = useState<Track[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const baked = useMemo<Track[]>(
+    () => (chip === 0 ? HOLLYWOOD_TRACKS : hollywoodByArtist(HOLLYWOOD_CHIPS[chip - 1].label)),
+    [chip],
+  )
+  const useLive = chip !== 0 && baked.length < 6
+
+  useEffect(() => {
+    setErr(null)
+    setLive(null)
+    if (!useLive) {
+      setLoading(false)
+      return
+    }
+    // Fallback for a thin artist lane → one (cached) live search.
+    let cancelled = false
+    const q = HOLLYWOOD_CHIPS[chip - 1].q
+    setLoading(true)
+    searchYT(q)
+      .then((r) => !cancelled && setLive(r))
+      .catch(async () => {
+        try {
+          const a = await searchTracks(HOLLYWOOD_CHIPS[chip - 1].label)
+          if (!cancelled) setLive(a)
+        } catch {
+          if (!cancelled) {
+            setErr('Could not load this artist.')
+            setLive([])
+          }
+        }
+      })
+      .finally(() => !cancelled && setLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [chip, useLive])
+
+  const tracks = useLive ? live ?? [] : baked
+
+  return (
+    <div className="view">
+      <header className="phead">
+        <div className="phead__cover phead__cover--hollywood">
+          <Film size={56} />
+        </div>
+        <div className="phead__meta">
+          <span className="phead__type">English · Global</span>
+          <h1 className="phead__title">Hollywood &amp; English</h1>
+          <p className="phead__sub">
+            {HOLLYWOOD_TRACKS.length}+ songs across {HOLLYWOOD_ARTISTS.length} artists — pop, rock,
+            hip-hop &amp; more, streaming free. Pick an artist below.
+          </p>
+          <div className="phead__actions">
+            <BigPlay tracks={tracks} />
+          </div>
+        </div>
+      </header>
+
+      <div className="chips">
+        <button className={`chip ${chip === 0 ? 'active' : ''}`} onClick={() => setChip(0)}>
+          All
+        </button>
+        {HOLLYWOOD_CHIPS.map((c, i) => (
+          <button
+            key={c.label}
+            className={`chip ${chip === i + 1 ? 'active' : ''}`}
+            onClick={() => setChip(i + 1)}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <Loading label="Loading songs" />
+      ) : err ? (
+        <ErrorState message={err} />
+      ) : !tracks.length ? (
+        <div className="state">
+          <p>No songs found for this artist.</p>
+        </div>
+      ) : (
+        <TrackList tracks={tracks} />
+      )}
+    </div>
+  )
+}
+
 // Indian podcasts — full episodes streamed from YouTube. Same chip pattern as
 // HindiView, but the search allows long videos (10 min – 5 h) so it returns
 // whole episodes instead of dropping them as "too long".
@@ -2843,7 +2951,7 @@ function Sidebar() {
 
       <div className="menu-label">
         <span>Menu</span>
-        <span className="menu-label__n">5</span>
+        <span className="menu-label__n">6</span>
         <MoreHorizontal size={15} />
       </div>
       <nav className="nav">
@@ -2854,6 +2962,13 @@ function Sidebar() {
           badge="new"
           active={section === 'hindi'}
           onClick={() => navigate({ type: 'hindi' }, 'hindi')}
+        />
+        <NavItem
+          icon={Film}
+          label="Hollywood"
+          badge="new"
+          active={section === 'hollywood'}
+          onClick={() => navigate({ type: 'hollywood' }, 'hollywood')}
         />
         <NavItem icon={LayoutGrid} label="Browse" active={section === 'browse'} onClick={() => { setQuery(''); navigate({ type: 'search' }, 'browse') }} />
         <NavItem
@@ -3879,7 +3994,9 @@ function RightRail() {
               onClick={() =>
                 t.hindi
                   ? navigate({ type: 'hindi' }, 'hindi')
-                  : navigate({ type: 'genre', genre: t.genre ?? '', name: t.label }, 'browse')
+                  : t.hollywood
+                    ? navigate({ type: 'hollywood' }, 'hollywood')
+                    : navigate({ type: 'genre', genre: t.genre ?? '', name: t.label }, 'browse')
               }
             >
               <span className="tag__e">{t.emoji}</span>
@@ -3985,6 +4102,9 @@ function CenterColumn() {
       break
     case 'hindi':
       body = <HindiView />
+      break
+    case 'hollywood':
+      body = <HollywoodView />
       break
     case 'podcasts':
       body = <PodcastsView />
@@ -4166,6 +4286,13 @@ function MobileNav() {
       >
         <Clapperboard size={20} />
         <span>Bollywood</span>
+      </button>
+      <button
+        className={`mnav__tab ${section === 'hollywood' ? 'on' : ''}`}
+        onClick={() => navigate({ type: 'hollywood' }, 'hollywood')}
+      >
+        <Film size={20} />
+        <span>Hollywood</span>
       </button>
       <button
         className={`mnav__tab ${section === 'song' ? 'on' : ''}`}

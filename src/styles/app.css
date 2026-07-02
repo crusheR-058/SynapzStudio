@@ -1361,6 +1361,12 @@ input {
   background: linear-gradient(135deg, #ff5e5e, #b00d22);
   color: #fff;
 }
+.phead__cover--hollywood {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f5c451, #8e0a1c);
+  color: #fff;
+}
 .phead__cover--podcast {
   display: grid;
   place-items: center;

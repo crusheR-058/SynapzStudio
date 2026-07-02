@@ -38,6 +38,7 @@ export type View =
   | { type: 'genre'; genre: string; name: string }
   | { type: 'station'; q: string; name: string }
   | { type: 'hindi' }
+  | { type: 'hollywood' }
   | { type: 'podcasts' }
   | { type: 'radio' }
   | { type: 'account' }
