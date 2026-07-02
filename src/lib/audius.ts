@@ -59,6 +59,10 @@ async function ensureHosts(): Promise<void> {
       } catch {
         hosts = [...FALLBACK_HOSTS]
         currentHost = FALLBACK_HOSTS[0]
+        // Allow a later call to retry the bootstrap — otherwise a single early
+        // failure (offline at launch, transient DNS) pins us to the fallback
+        // hosts for the whole session even after connectivity returns.
+        bootstrapPromise = null
       }
     })()
   }

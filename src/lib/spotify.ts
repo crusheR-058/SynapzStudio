@@ -51,6 +51,10 @@ function looksLikeMatch(ref: SpotifyTrackRef, cand: Track): boolean {
   const title = norm(ref.title)
   const ct = norm(cand.title)
   if (!title) return true
+  // If the candidate title normalizes to nothing (e.g. a fully non-Latin/
+  // Devanagari title), the includes() checks below would trivially pass and let
+  // any candidate through — fall back to the duration check alone instead.
+  if (!ct) return !ref.durationMs || !cand.duration || Math.abs(cand.duration - ref.durationMs / 1000) <= 25
   const titleHit = ct.includes(title.split(' ').slice(0, 3).join(' ')) || title.includes(ct.slice(0, 8))
   // duration within 25s when both known
   const durOk =

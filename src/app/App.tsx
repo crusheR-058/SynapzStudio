@@ -457,6 +457,10 @@ function Cover({
   className?: string
 }) {
   const [failed, setFailed] = useState(false)
+  // Reset when the artwork changes — persistent Cover instances (player bar,
+  // mini player, fullscreen art) are reused across tracks, so without this one
+  // broken image would show the placeholder for every later track too.
+  useEffect(() => setFailed(false), [src])
   const show = src && !failed
   return (
     <div className={`cover ${className ?? ''}`}>
@@ -513,8 +517,14 @@ function SourceBadge({ source }: { source: Track['source'] }) {
 
 function BigPlay({ tracks, size = 52 }: { tracks: Track[]; size?: number }) {
   const { playContext, currentTrack, isPlaying, togglePlay, queue } = usePlayer()
+  // "Is this button's list the one currently playing?" — compare by content, not
+  // just length: a length check mis-fires between two equal-length lists that
+  // share the current track, and breaks once autoplay radio grows the queue.
   const isThis =
-    !!currentTrack && tracks.some((t) => t.id === currentTrack.id) && queue.length === tracks.length
+    !!currentTrack &&
+    tracks.length > 0 &&
+    tracks.length <= queue.length &&
+    tracks.every((t, i) => t.id === queue[i]?.id)
   const active = isThis && isPlaying
   return (
     <button
@@ -552,6 +562,7 @@ function AddToPlaylistButton({
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
+  const popRef = useRef<HTMLDivElement>(null)
 
   const openMenu = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -568,14 +579,20 @@ function AddToPlaylistButton({
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)
+    // Don't close on scrolls that happen INSIDE the popover's own (scrollable)
+    // playlist list — only on page/background scrolls.
+    const onScroll = (e: Event) => {
+      if (popRef.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     window.addEventListener('resize', close)
     window.addEventListener('keydown', onKey)
-    document.addEventListener('scroll', close, true)
+    document.addEventListener('scroll', onScroll, true)
     return () => {
       window.removeEventListener('resize', close)
       window.removeEventListener('keydown', onKey)
-      document.removeEventListener('scroll', close, true)
+      document.removeEventListener('scroll', onScroll, true)
     }
   }, [open])
 
@@ -599,7 +616,12 @@ function AddToPlaylistButton({
       {open && pos && (
         <>
           <div className="pop__scrim" onClick={() => setOpen(false)} />
-          <div className="pop" style={{ left: pos.x, top: pos.y }} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={popRef}
+            className="pop"
+            style={{ left: pos.x, top: pos.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="pop__title">Add to playlist</div>
             <div className="pop__list">
               {playlists.length === 0 && !creating && (
@@ -1282,7 +1304,9 @@ function ImportView({ url }: { url: string }) {
     const worker = async () => {
       while (i < refs.length && !cancelRef.current) {
         const idx = i++
-        results[idx] = (await resolveTrack(refs[idx])) ?? null
+        const resolved = (await resolveTrack(refs[idx])) ?? null
+        if (cancelRef.current) return // bailed out mid-resolve — don't touch playback
+        results[idx] = resolved
         setScanned((s) => s + 1)
         flush()
       }
@@ -1411,7 +1435,7 @@ function SearchView() {
     return (
       <div className="view">
         <MobileSearchField />
-        <ImportView url={query.trim()} />
+        <ImportView key={query.trim()} url={query.trim()} />
       </div>
     )
   }
@@ -2578,7 +2602,13 @@ function AccountView() {
           </div>
         </div>
         <div className="acct-actions">
-          <button className="btn-ghost" onClick={() => logout()}>
+          <button
+            className="btn-ghost"
+            onClick={() => {
+              logout()
+              navigate({ type: 'home' }, 'home')
+            }}
+          >
             <LogOut size={15} /> Log out
           </button>
         </div>
@@ -3250,7 +3280,11 @@ function ExtrasMenu({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      // Ignore clicks anywhere in the .extras wrapper (which holds BOTH this menu
+      // and its toggle button) — otherwise clicking the toggle to close would
+      // fire this close, then the button's onClick would re-open it.
+      const wrap = ref.current?.parentElement ?? ref.current
+      if (wrap && !wrap.contains(e.target as Node)) onClose()
     }
     // defer so the opening click doesn't immediately close it
     const id = setTimeout(() => window.addEventListener('mousedown', onDown), 0)
@@ -3988,6 +4022,8 @@ function CenterColumn() {
 // moment a session exists (handled in AuthProvider).
 function AuthModal() {
   const { authOpen, authMode, closeAuth, loginWithGoogle, googleEnabled } = useAuth()
+  const [authErr, setAuthErr] = useState('')
+  const [busy, setBusy] = useState(false)
 
   // Esc closes the popup.
   useEffect(() => {
@@ -3999,6 +4035,18 @@ function AuthModal() {
 
   if (!authOpen) return null
   const signup = authMode === 'signup'
+
+  const doGoogle = async () => {
+    setAuthErr('')
+    setBusy(true)
+    try {
+      await loginWithGoogle()
+    } catch (e: any) {
+      // e.g. provider not enabled in Supabase, or a network error before redirect.
+      setAuthErr(e?.message || 'Sign-in failed. Please try again.')
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="authmodal" onClick={closeAuth}>
@@ -4029,15 +4077,18 @@ function AuthModal() {
         </div>
 
         {googleEnabled ? (
-          <button className="gbtn" onClick={() => loginWithGoogle()}>
-            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
-              <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
-              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
-              <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" />
-              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
-            </svg>
-            Continue with Google
-          </button>
+          <>
+            <button className="gbtn" onClick={doGoogle} disabled={busy}>
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
+                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
+                <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" />
+                <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
+              </svg>
+              {busy ? 'Connecting…' : 'Continue with Google'}
+            </button>
+            {authErr && <p className="login__err">{authErr}</p>}
+          </>
         ) : (
           <p className="login__note">
             Sign-in isn’t configured yet. Set <code>VITE_SUPABASE_URL</code> &amp;{' '}

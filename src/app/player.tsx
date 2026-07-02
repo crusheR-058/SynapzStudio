@@ -192,6 +192,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const mk = () => {
       const a = new Audio()
       a.preload = 'auto'
+      // Required so the Web Audio graph (EQ / visualizer) can read the samples.
+      // Without it, routing a cross-origin stream through createMediaElementSource
+      // produces silence (CORS-tainted). Audius + SomaFM both send
+      // Access-Control-Allow-Origin: *, so this is safe for every stream we play.
+      a.crossOrigin = 'anonymous'
       return a
     }
     return [mk(), mk()]
@@ -236,7 +241,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const repeatRef = useRef(repeat)
   const progressRef = useRef(0)
   const currentTrackRef = useRef<Track | null>(null)
-  const volRef = useRef(muted ? 0 : volume) // 0-100
+  const volRef = useRef(muted ? 0 : volume) // 0-100, effective (0 when muted)
+  const volLevelRef = useRef(volume) // 0-100, stored level (ignores mute)
   const rateRef = useRef(rate)
   const crossfadeRef = useRef(crossfade)
   const eqGainsRef = useRef(eqGains)
@@ -407,6 +413,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const s = document.createElement('script')
         s.id = 'yt-iframe-api'
         s.src = 'https://www.youtube.com/iframe_api'
+        // If the API can't load (ad-blocker, offline, CSP) a YouTube track would
+        // otherwise spin forever — surface it and skip so autoplay isn't wedged.
+        s.onerror = () => {
+          if (cancelled) return
+          if (isIframeTrack(currentTrackRef.current)) {
+            setIsBuffering(false)
+            setError('YouTube player couldn’t load — skipping this track.')
+            advanceRef.current()
+          }
+        }
         document.body.appendChild(s)
       }
     }
@@ -496,6 +512,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
     setRecentAt((prev) => {
       const updated = { ...prev, [track.id]: Date.now() }
+      // Cap to the ~30 most recent so this map can't grow without bound.
+      const entries = Object.entries(updated)
+      if (entries.length > 40) {
+        entries.sort((a, b) => b[1] - a[1])
+        const trimmed: Record<string, number> = {}
+        for (const [id, ts] of entries.slice(0, 40)) trimmed[id] = ts
+        save(LS.recentAt, trimmed)
+        return trimmed
+      }
       save(LS.recentAt, updated)
       return updated
     })
@@ -506,7 +531,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const ids = Object.keys(s.tracks)
     if (ids.length > 400) {
       ids.sort((a, b) => (s.plays[a] || 0) - (s.plays[b] || 0))
-      for (const id of ids.slice(0, ids.length - 400)) delete s.tracks[id]
+      // Drop the least-played tracks AND their play counts (previously only
+      // s.tracks was pruned, so s.plays leaked one key per track forever).
+      for (const id of ids.slice(0, ids.length - 400)) {
+        delete s.tracks[id]
+        delete s.plays[id]
+      }
     }
     save(LS.stats, s)
   }, [])
@@ -519,7 +549,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       s.listenedSec += 1
       const k = dayKey()
       s.daily[k] = (s.daily[k] || 0) + 1
-      if (s.listenedSec % 15 === 0) save(LS.stats, s)
+      if (s.listenedSec % 15 === 0) {
+        // Keep only the last ~40 days of daily totals (the dashboard shows 7);
+        // otherwise s.daily accumulates one key per day forever.
+        const days = Object.keys(s.daily)
+        if (days.length > 40) {
+          for (const d of days.sort().slice(0, days.length - 40)) delete s.daily[d]
+        }
+        save(LS.stats, s)
+      }
     }, 1000)
     return () => {
       save(LS.stats, statsRef.current)
@@ -538,6 +576,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }, 1000)
     return () => clearInterval(iv)
   }, [sleep.endsAt])
+
+  // Auto-dismiss the error toast — otherwise a terminal failure (e.g. the last
+  // track fails to load) leaves it stuck on screen forever, since it's only ever
+  // cleared by the next successful load.
+  useEffect(() => {
+    if (!error) return
+    const id = setTimeout(() => setError(null), 4500)
+    return () => clearTimeout(id)
+  }, [error])
 
   const getStats = useCallback((): PlayerStats => {
     const s = statsRef.current
@@ -771,31 +818,66 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (cf <= 0) return
       const a = active()
       const b = idle()
-      const base = volRef.current / 100
       fadingRef.current = true
       b.src = sel.track.streamUrl
       b.currentTime = 0
       b.volume = 0
       b.playbackRate = rateRef.current
-      b.play().catch(() => {
+
+      let id: number | undefined
+      let done = false
+      let elapsed = 0 // ms of fade progressed (accumulated only while playing)
+      let last = Date.now()
+
+      // Tear down THIS fade's interval. We track the id locally (not just via
+      // fadeIvRef) so a stale interval can never keep firing after its ref was
+      // overwritten by a later fade.
+      const stop = () => {
+        if (id !== undefined) clearInterval(id)
+        if (fadeIvRef.current === id) fadeIvRef.current = undefined
         fadingRef.current = false
+      }
+
+      b.play().catch(() => {
+        // The next deck couldn't start (dead/geo-blocked stream). Abort the fade
+        // and keep the current track playing at full volume instead of ramping
+        // it into silence — handleEnded will advance normally when it ends.
+        stop()
+        try {
+          b.pause()
+        } catch {
+          /* noop */
+        }
+        a.volume = volRef.current / 100
       })
-      const start = Date.now()
-      fadeIvRef.current = window.setInterval(() => {
-        const frac = Math.min(1, (Date.now() - start) / (cf * 1000))
-        a.volume = base * (1 - frac)
-        b.volume = base * frac
+
+      id = window.setInterval(() => {
+        // Cancelled elsewhere (track change / seek / unmount) — bail out.
+        if (!fadingRef.current || done) {
+          stop()
+          return
+        }
+        const now = Date.now()
+        const dt = now - last
+        last = now
+        // Freeze the fade while paused so pausing mid-fade doesn't silently
+        // auto-advance to the next track.
+        if (a.paused) return
+        elapsed += dt
+        const vol = volRef.current / 100 // honor live volume/mute changes
+        const frac = Math.min(1, elapsed / (cf * 1000))
+        a.volume = vol * (1 - frac)
+        b.volume = vol * frac
         if (frac >= 1) {
-          if (fadeIvRef.current !== undefined) clearInterval(fadeIvRef.current)
-          fadeIvRef.current = undefined
-          fadingRef.current = false
+          done = true
+          stop()
           try {
             a.pause()
           } catch {
             /* noop */
           }
           activeRef.current ^= 1 // idle deck is now the active one
-          b.volume = base
+          b.volume = vol
           if (sel.kind === 'user') consumeUserQueueHead()
           else {
             setIndex(sel.idx)
@@ -808,6 +890,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           pushRecent(sel.track)
         }
       }, 50)
+      fadeIvRef.current = id
     },
     [active, idle, consumeUserQueueHead, pushRecent],
   )
@@ -1028,6 +1111,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const setVolume = useCallback((v: number) => {
     const clamped = Math.max(0, Math.min(100, v))
     setVolumeState(clamped)
+    volLevelRef.current = clamped
     setMuted(clamped === 0)
     save(LS.volume, clamped)
   }, [])
@@ -1055,18 +1139,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Sync liked songs with the account: on sign-in, import any local likes once,
   // then load the cloud library; on sign-out, fall back to the local mirror.
   const importedForRef = useRef<string | null>(null)
+  const prevEmailRef = useRef<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    if (!user) {
+    const email = user?.email ?? null
+    // True only on a signed-in → signed-out transition (not the initial load).
+    const justSignedOut = !email && !!prevEmailRef.current
+    prevEmailRef.current = email
+    if (!email) {
       importedForRef.current = null
-      setLiked(load(LS.liked, []))
+      if (justSignedOut) {
+        // Clear the previous account's mirrored likes so they don't get treated
+        // as "local likes" and imported into whoever signs in next.
+        setLiked([])
+        save(LS.liked, [])
+      } else {
+        setLiked(load(LS.liked, []))
+      }
       return
     }
     ;(async () => {
-      if (importedForRef.current !== user.email) {
+      if (importedForRef.current !== email) {
         const local = load<Track[]>(LS.liked, [])
         if (local.length) await cloudImportLikes(local)
-        importedForRef.current = user.email
+        importedForRef.current = email
       }
       const cloud = await cloudFetchLikes()
       if (cancelled) return
@@ -1196,11 +1292,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           break
         case 'ArrowUp':
           e.preventDefault()
-          setVolume(volRef.current + 5)
+          // Use the stored level, not the effective volume (which is 0 when
+          // muted) — otherwise ArrowUp while muted would reset volume to 5.
+          setVolume(volLevelRef.current + 5)
           break
         case 'ArrowDown':
           e.preventDefault()
-          setVolume(volRef.current - 5)
+          setVolume(volLevelRef.current - 5)
           break
         case 'KeyN':
           next()

@@ -253,13 +253,14 @@ const inflight = new Map<string, Promise<Track[]>>()
 
 async function runSearch(query: string, opts: SearchOpts): Promise<Track[]> {
   const isProd = !!(import.meta as any).env?.PROD
-  if (isProd && hasYtKey()) {
-    try {
-      return await searchYouTube(query, 50, opts)
-    } catch {
-      return await searchYouTubeLocal(query, opts)
-    }
+  if (isProd) {
+    // The keyless /yt helper only exists behind the local dev proxy, so on Vercel
+    // it 404s. Use the Data API directly and surface NO_KEY (which the UI turns
+    // into "Connect YouTube") instead of masking it with a broken fallback.
+    if (!hasYtKey()) throw new YtError('NO_KEY')
+    return await searchYouTube(query, 50, opts)
   }
+  // Dev: prefer the keyless yt-dlp helper; fall back to the Data API if a key exists.
   try {
     return await searchYouTubeLocal(query, opts)
   } catch (e) {
@@ -276,13 +277,17 @@ async function runSearch(query: string, opts: SearchOpts): Promise<Track[]> {
  */
 export async function searchYT(query: string, opts: SearchOpts = {}): Promise<Track[]> {
   if (!query.trim()) return []
-  const key = cacheKey(query, opts)
+  // Resolve the duration window up-front so the cache key and BOTH search paths
+  // use the same filter — otherwise a dev-cached result (15 min cap) could be
+  // served for a prod query that expects the 30 min cap, and vice versa.
+  const resolved: SearchOpts = { minSec: opts.minSec ?? 1, maxSec: opts.maxSec ?? 60 * 30 }
+  const key = cacheKey(query, resolved)
   const cached = readCache(key)
   if (cached) return cached
   const existing = inflight.get(key)
   if (existing) return existing
   const p = (async () => {
-    const tracks = await runSearch(query, opts)
+    const tracks = await runSearch(query, resolved)
     if (tracks.length) writeCache(key, tracks)
     return tracks
   })()

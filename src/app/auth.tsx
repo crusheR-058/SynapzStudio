@@ -78,10 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = useCallback(async () => {
     if (!supabase) return
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin },
     })
+    // signInWithOAuth resolves with { error } rather than throwing; propagate it
+    // so the caller can show feedback instead of the click doing nothing.
+    if (error) throw error
     // Browser navigates to Google; on return, onAuthStateChange sets the user.
   }, [])
 

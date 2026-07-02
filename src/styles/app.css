@@ -1700,6 +1700,13 @@ input {
   border-radius: 4px;
   font-size: 11px;
 }
+.login__err {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: #ff6b7a;
+  line-height: 1.5;
+  text-align: center;
+}
 
 /* sign-in / sign-up popup — clipped to the app window (position: absolute) */
 .authmodal {

@@ -82,6 +82,9 @@ export function PlaylistsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [playlists, setPlaylists] = useState<UserPlaylist[]>(() => loadLocal())
   const importedFor = useRef<string | null>(null)
+  const prevEmail = useRef<string | null>(null)
+  const playlistsRef = useRef(playlists)
+  useEffect(() => void (playlistsRef.current = playlists), [playlists])
 
   // Replace state + persist the local cache in one shot.
   const update = useCallback((fn: (prev: UserPlaylist[]) => UserPlaylist[]) => {
@@ -95,16 +98,26 @@ export function PlaylistsProvider({ children }: { children: ReactNode }) {
   // Load the right source whenever the signed-in identity changes.
   useEffect(() => {
     let cancelled = false
-    if (!user) {
+    const email = user?.email ?? null
+    const justSignedOut = !email && !!prevEmail.current
+    prevEmail.current = email
+    if (!email) {
       importedFor.current = null
-      setPlaylists(loadLocal())
+      if (justSignedOut) {
+        // Drop the previous account's synced playlists so they aren't re-imported
+        // into whoever signs in next on this browser.
+        setPlaylists([])
+        saveLocal([])
+      } else {
+        setPlaylists(loadLocal())
+      }
       return
     }
     ;(async () => {
       let list = await cloudFetchPlaylists()
       // One-time import: push playlists made while signed out up to the cloud.
-      if (importedFor.current !== user.email) {
-        importedFor.current = user.email
+      if (importedFor.current !== email) {
+        importedFor.current = email
         const local = loadLocal()
         if (!list.length && local.length) {
           for (const pl of local) {
@@ -185,6 +198,11 @@ export function PlaylistsProvider({ children }: { children: ReactNode }) {
 
   const addToPlaylist = useCallback(
     (id: string, track: Track) => {
+      // Skip if the track is already in the playlist — otherwise the (un-awaited)
+      // cloud insert would write a duplicate row that the local dedupe hides,
+      // surfacing as a duplicate after the next reload/sign-in.
+      const pl = playlistsRef.current.find((p) => p.id === id)
+      if (pl && pl.tracks.some((t) => t.id === track.id)) return
       if (user) cloudAddToPlaylist(id, track)
       update((prev) =>
         prev.map((p) =>

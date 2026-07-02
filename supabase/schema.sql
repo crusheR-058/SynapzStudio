@@ -90,11 +90,23 @@ create table if not exists public.playlists (
   updated_at  timestamptz not null default now()
 );
 
+-- Sharing flags (added after the initial release). The app SELECTs these, so
+-- they must exist or PostgREST rejects the whole query. Idempotent.
+alter table public.playlists add column if not exists is_public boolean not null default false;
+alter table public.playlists add column if not exists is_collaborative boolean not null default false;
+
 alter table public.playlists enable row level security;
 
 drop policy if exists "playlists_all_own" on public.playlists;
 create policy "playlists_all_own" on public.playlists
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Anyone (incl. signed-out) may READ a playlist the owner marked public or
+-- collaborative — this is what makes shared links work. Permissive policies are
+-- OR-ed, so the owner still sees their private playlists via playlists_all_own.
+drop policy if exists "playlists_select_shared" on public.playlists;
+create policy "playlists_select_shared" on public.playlists
+  for select using (is_public or is_collaborative);
 
 create index if not exists playlists_user on public.playlists (user_id, updated_at desc);
 
@@ -114,6 +126,33 @@ alter table public.playlist_tracks enable row level security;
 drop policy if exists "playlist_tracks_all_own" on public.playlist_tracks;
 create policy "playlist_tracks_all_own" on public.playlist_tracks
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Read tracks of any playlist that is shared (public/collaborative) or owned by
+-- the reader — so shared links resolve, and the owner can see tracks a
+-- collaborator added (those rows carry the collaborator's user_id, which the
+-- owner-only policy above would otherwise hide).
+drop policy if exists "playlist_tracks_select_shared" on public.playlist_tracks;
+create policy "playlist_tracks_select_shared" on public.playlist_tracks
+  for select using (
+    exists (
+      select 1 from public.playlists p
+      where p.id = playlist_tracks.playlist_id
+        and (p.is_public or p.is_collaborative or p.user_id = auth.uid())
+    )
+  );
+
+-- A signed-in user may add tracks to a collaborative playlist (rows still carry
+-- their own user_id, enforced by with check).
+drop policy if exists "playlist_tracks_insert_collab" on public.playlist_tracks;
+create policy "playlist_tracks_insert_collab" on public.playlist_tracks
+  for insert with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.playlists p
+      where p.id = playlist_tracks.playlist_id
+        and (p.is_collaborative or p.user_id = auth.uid())
+    )
+  );
 
 create index if not exists playlist_tracks_order
   on public.playlist_tracks (playlist_id, position);

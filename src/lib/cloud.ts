@@ -233,17 +233,23 @@ export async function cloudAddToPlaylist(playlistId: string, track: Track): Prom
   const id = await uid()
   if (!supabase || !id) return
   try {
-    // append at the end
-    const { count } = await supabase
+    // Append at the end using max(position)+1, NOT the row count: after any
+    // removal the count is < the highest position, so a count-based position
+    // would collide with an existing row and scramble the order.
+    const { data: top } = await supabase
       .from('playlist_tracks')
-      .select('id', { count: 'exact', head: true })
+      .select('position')
       .eq('playlist_id', playlistId)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const position = typeof top?.position === 'number' ? top.position + 1 : 0
     await supabase.from('playlist_tracks').insert({
       playlist_id: playlistId,
       user_id: id,
       track_id: track.id,
       track,
-      position: count ?? 0,
+      position,
     })
     await supabase.from('playlists').update({ updated_at: new Date().toISOString() }).eq('id', playlistId)
   } catch {

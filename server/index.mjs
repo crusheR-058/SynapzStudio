@@ -16,7 +16,7 @@ import {
   signSession,
   sessionCookie,
   clearCookie,
-  decodeJwt,
+  verifyGoogleToken,
   googleUser,
 } from '../lib/session.mjs'
 import { importSpotify, SpotifyError } from '../lib/spotify.mjs'
@@ -45,9 +45,9 @@ const app = express()
 app.use(express.json({ limit: '256kb' }))
 
 // --- auth (shared, stateless cookie sessions) ---------------------------
-app.post('/api/auth/google', (req, res) => {
-  const payload = req.body?.credential && decodeJwt(req.body.credential)
-  if (!payload?.email) return res.status(400).json({ error: 'invalid credential' })
+app.post('/api/auth/google', async (req, res) => {
+  const payload = req.body?.credential ? await verifyGoogleToken(req.body.credential) : null
+  if (!payload?.email) return res.status(401).json({ error: 'invalid credential' })
   const u = googleUser(payload)
   res.setHeader('Set-Cookie', sessionCookie(signSession(u)))
   res.json({ user: publicUser(u) })
@@ -58,7 +58,7 @@ app.get('/api/me', (req, res) => res.json({ user: publicUser(currentUser(req)) }
 app.post('/api/profile/name', (req, res) => {
   const u = currentUser(req)
   if (!u) return res.status(401).json({ error: 'not logged in' })
-  const name = (req.body?.name || '').trim()
+  const name = (typeof req.body?.name === 'string' ? req.body.name : '').trim()
   if (name) u.name = name.slice(0, 60)
   res.setHeader('Set-Cookie', sessionCookie(signSession(u)))
   res.json({ user: publicUser(u) })
