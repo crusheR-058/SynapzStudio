@@ -2,16 +2,18 @@ name: Release desktop app
 
 # Cut a release by pushing a version tag, e.g.:
 #   git tag v1.0.0 && git push origin v1.0.0
-# This builds the Windows (.exe) and macOS (.dmg) installers and uploads them to
-# a GitHub Release for that tag — that Release is what "Get the desktop app"
-# links to. You can also run it manually from the Actions tab.
+# The matrix jobs BUILD the Windows (.exe) and macOS (.dmg) installers and upload
+# them as artifacts; a single `publish` job then creates ONE GitHub Release with
+# both. (Publishing from each matrix job in parallel races and splits the assets
+# across duplicate draft releases — so we don't do that.) You can also run it
+# manually from the Actions tab.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write # let electron-builder create/upload the GitHub Release
+  contents: write # let the publish job create the GitHub Release
 
 jobs:
   build:
@@ -44,13 +46,48 @@ jobs:
           curl -L "${{ matrix.ytdlp_url }}" -o "${{ matrix.ytdlp_out }}"
           chmod +x "${{ matrix.ytdlp_out }}" || true
 
-      - name: Build & publish installer
+      - name: Build installer (no publish)
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No Apple Developer cert in CI — build an unsigned .dmg instead of failing.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           npm run icons
           npm run build
-          npx electron-builder --publish always
+          npx electron-builder --publish never
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.yml
+            release/*.blockmap
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Synapz Music ${{ github.ref_name }}" \
+            --notes "Synapz Music desktop app ${{ github.ref_name }}.
+
+          - **Windows:** \`Synapz-Music-Setup-*.exe\`
+          - **macOS (Apple Silicon):** \`Synapz-Music-*-arm64.dmg\`
+
+          Builds are unsigned: on first launch, Windows shows SmartScreen (More info -> Run anyway) and macOS shows Gatekeeper (right-click -> Open)." \
+            artifacts/*
