@@ -24,6 +24,23 @@ RUN npm ci
 
 # Copy the rest and build the frontend into dist/.
 COPY . .
+
+# Optional build-time keys — Vite bakes VITE_* vars into the bundle at build
+# time. ALL default empty; the app degrades gracefully without them:
+#   - search:  works keyless via the yt-dlp /yt/search helper (no key needed)
+#   - login:   falls back to a demo account unless VITE_GOOGLE_CLIENT_ID is set
+#   - sync:    likes/history stay local unless VITE_SUPABASE_* is set
+# To enable any of these on Render, add the matching env var in the dashboard
+# (Render exposes service env vars to the Docker build).
+ARG VITE_GOOGLE_CLIENT_ID=""
+ARG VITE_YOUTUBE_API_KEY=""
+ARG VITE_SUPABASE_URL=""
+ARG VITE_SUPABASE_ANON_KEY=""
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID \
+    VITE_YOUTUBE_API_KEY=$VITE_YOUTUBE_API_KEY \
+    VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+    VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
 RUN npm run build
 
 ENV NODE_ENV=production \

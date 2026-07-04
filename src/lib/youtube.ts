@@ -288,21 +288,22 @@ function writeCache(key: string, tracks: Track[]): void {
 const inflight = new Map<string, Promise<Track[]>>()
 
 async function runSearch(query: string, opts: SearchOpts): Promise<Track[]> {
-  const isProd = !!(import.meta as any).env?.PROD
-  if (isProd) {
-    // The keyless /yt helper only exists behind the local dev proxy, so on Vercel
-    // it 404s. Use the Data API directly and surface NO_KEY (which the UI turns
-    // into "Connect YouTube") instead of masking it with a broken fallback.
-    if (!hasYtKey()) throw new YtError('NO_KEY')
-    return await searchYouTube(query, 50, opts)
+  // A reachable Synapz backend (local dev proxy OR a self-hosted Docker deploy)
+  // exposes the keyless yt-dlp helper at /yt/search — prefer it so search needs
+  // NO API key and NO quota, matching the keyless /yt/stream playback path.
+  // On Vercel (static, no /yt routes) the probe is false and we skip it.
+  const backend = await probeYtStream()
+  if (backend) {
+    try {
+      return await searchYouTubeLocal(query, opts)
+    } catch {
+      /* backend hiccup — fall through to the Data API if a key is configured */
+    }
   }
-  // Dev: prefer the keyless yt-dlp helper; fall back to the Data API if a key exists.
-  try {
-    return await searchYouTubeLocal(query, opts)
-  } catch (e) {
-    if (hasYtKey()) return await searchYouTube(query, 50, opts)
-    throw e
-  }
+  // No backend: use the YouTube Data API, surfacing NO_KEY (which the UI turns
+  // into "Connect YouTube") when no key is configured.
+  if (!hasYtKey()) throw new YtError('NO_KEY')
+  return await searchYouTube(query, 50, opts)
 }
 
 /**
