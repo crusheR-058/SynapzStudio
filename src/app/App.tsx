@@ -87,6 +87,13 @@ import {
 import { fetchPopular, searchYT } from '../lib/youtube'
 import { BOLLYWOOD_TRACKS, bollywoodByCategory } from '../lib/bollywood'
 import { HOLLYWOOD_TRACKS, HOLLYWOOD_ARTISTS, hollywoodByArtist } from '../lib/hollywood'
+import {
+  isDesktop,
+  discordEnabled,
+  setDiscordEnabled,
+  getDiscordStatus,
+  type DiscordStatus,
+} from '../lib/discord'
 import { PODCAST_TRACKS, podcastsByCategory } from '../lib/podcasts'
 import { stationByName } from '../lib/stations'
 import { RADIO_STATIONS } from '../lib/radio'
@@ -2511,6 +2518,69 @@ function ThemePicker() {
   )
 }
 
+// Discord Rich Presence controls — desktop app only (renders nothing on web).
+// Toggles the "Listening to Synapz Music" status and surfaces the live
+// connection state reported by the Electron main process.
+function DiscordSettings() {
+  const [enabled, setEnabled] = useState(() => discordEnabled())
+  const [status, setStatus] = useState<DiscordStatus | null>(null)
+
+  useEffect(() => {
+    if (!isDesktop()) return
+    let live = true
+    const poll = () => getDiscordStatus().then((s) => live && s && setStatus(s))
+    poll()
+    const iv = setInterval(poll, 4000)
+    return () => {
+      live = false
+      clearInterval(iv)
+    }
+  }, [])
+
+  if (!isDesktop()) return null
+
+  const toggle = () => {
+    const v = !enabled
+    setEnabled(v)
+    setDiscordEnabled(v)
+  }
+
+  const state = !status?.configured
+    ? { dot: '#e0a30b', text: 'No Discord Application ID set — see the setup notes' }
+    : status.connected
+      ? { dot: '#1db954', text: 'Connected to Discord' }
+      : { dot: '#8a8a92', text: 'Waiting for Discord — is the desktop app running?' }
+
+  return (
+    <section className="section">
+      <div className="section__head">
+        <h2>Discord presence</h2>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            flex: '0 0 auto',
+            background: enabled ? state.dot : '#5a5a62',
+          }}
+        />
+        <span style={{ flex: 1, color: 'var(--muted-foreground)' }}>
+          {enabled ? state.text : 'Turned off'}
+        </span>
+        <button className={enabled ? 'btn-solid' : 'btn-ghost'} onClick={toggle}>
+          {enabled ? 'On' : 'Off'}
+        </button>
+      </div>
+      <p style={{ marginTop: 10, fontSize: 13, color: 'var(--muted-foreground)' }}>
+        Shows “Listening to Synapz Music” with album art and a progress bar on your Discord
+        profile while a song plays. Requires the Discord desktop app to be running.
+      </p>
+    </section>
+  )
+}
+
 // Cross-device listening history (cloud play_history). Signed-in only.
 function CloudHistory() {
   const { user } = useAuth()
@@ -2746,6 +2816,8 @@ function AccountView() {
       </div>
 
       <ThemePicker />
+
+      <DiscordSettings />
 
       <CloudHistory />
 
@@ -3074,6 +3146,19 @@ function Sidebar() {
       </nav>
 
       <div className="sidebar__spacer" />
+
+      {!isDesktop() && (
+        <a
+          className="sb-getapp"
+          href="https://github.com/crusheR-058/SynapzStudio/releases/latest"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Download the Synapz Music desktop app (Windows & macOS)"
+        >
+          <Download size={16} />
+          <span>Get the desktop app</span>
+        </a>
+      )}
 
       {user ? (
         <div className={`profile ${section === 'account' ? 'active' : ''}`}>

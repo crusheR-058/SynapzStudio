@@ -4228,3 +4228,24 @@ input {
     opacity: 1;
   }
 }
+
+/* Sidebar "Get the desktop app" link — shown on the web build only. */
+.sb-getapp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 8px 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #26262c);
+  color: var(--muted-foreground, #a0a0a8);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.sb-getapp:hover {
+  background: var(--muted, #17171b);
+  color: var(--foreground, #fff);
+  border-color: var(--accent, #ff3b4e);
+}

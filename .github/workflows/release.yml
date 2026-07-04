@@ -1,0 +1,56 @@
+name: Release desktop app
+
+# Cut a release by pushing a version tag, e.g.:
+#   git tag v1.0.0 && git push origin v1.0.0
+# This builds the Windows (.exe) and macOS (.dmg) installers and uploads them to
+# a GitHub Release for that tag — that Release is what "Get the desktop app"
+# links to. You can also run it manually from the Actions tab.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # let electron-builder create/upload the GitHub Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            ytdlp_url: https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
+            ytdlp_out: bin/yt-dlp.exe
+          - os: macos-latest
+            ytdlp_url: https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos
+            ytdlp_out: bin/yt-dlp
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      # yt-dlp is gitignored, so fetch the right per-OS binary into bin/ — it's
+      # copied into the app's resources (powers the keyless YouTube/Bollywood search).
+      - name: Fetch yt-dlp
+        shell: bash
+        run: |
+          mkdir -p bin
+          curl -L "${{ matrix.ytdlp_url }}" -o "${{ matrix.ytdlp_out }}"
+          chmod +x "${{ matrix.ytdlp_out }}" || true
+
+      - name: Build & publish installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No Apple Developer cert in CI — build an unsigned .dmg instead of failing.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm run icons
+          npm run build
+          npx electron-builder --publish always

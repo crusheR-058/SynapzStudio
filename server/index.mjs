@@ -1,6 +1,8 @@
 import express from 'express'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
+import fs from 'node:fs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 // Load .env locally so SPOTIFY_CLIENT_ID/SECRET (and SESSION_SECRET) are
 // available to this dev server. Node 20.6+/24 built-in — no dotenv dependency.
@@ -30,7 +32,12 @@ import { importSpotify, SpotifyError } from '../lib/spotify.mjs'
 
 const PORT = process.env.PORT || 8787
 const ROOT = process.cwd()
-const YTDLP = path.join(ROOT, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// Packaged desktop builds set YTDLP_PATH to the bundled binary; otherwise use
+// the repo's bin/ (relative to cwd, as before).
+const YTDLP =
+  process.env.YTDLP_PATH ||
+  path.join(ROOT, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
 
 function run(args, timeout = 25000) {
   return new Promise((resolve, reject) => {
@@ -120,4 +127,31 @@ app.get('/yt/search', async (req, res) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, runtime: 'local' }))
 
-app.listen(PORT, () => console.log(`[synapz-api] listening on http://localhost:${PORT}`))
+// Serve the built frontend when it exists (desktop app / production), so the UI
+// and the /api + /yt routes are same-origin on one localhost port. This is a
+// no-op during `npm run dev`, where Vite serves the UI on :5173 and proxies here.
+const DIST = path.join(__dirname, '..', 'dist')
+if (fs.existsSync(path.join(DIST, 'index.html'))) {
+  app.use(express.static(DIST))
+  // SPA fallback: hand any non-API GET to index.html (client-side routing).
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/yt'))
+      return next()
+    res.sendFile(path.join(DIST, 'index.html'))
+  })
+}
+
+export function startBackend(port = PORT) {
+  return new Promise((resolve) => {
+    const server = app.listen(port, () => {
+      console.log(`[synapz-api] listening on http://localhost:${port}`)
+      resolve(server)
+    })
+  })
+}
+
+// Start listening when run directly (`node server/index.mjs`, `npm run dev:api`),
+// but NOT when imported (the Electron main process calls startBackend itself).
+const invokedDirectly =
+  process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
+if (invokedDirectly) startBackend()

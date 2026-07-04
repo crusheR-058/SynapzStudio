@@ -76,6 +76,70 @@ Build the frontend for production:
 npm run build
 ```
 
+## Desktop app + Discord Rich Presence
+
+Synapz also runs as a native desktop app (Electron) for **Windows and macOS**.
+The desktop build bundles the backend, so the keyless YouTube/Bollywood search
+works out of the box, and it adds **Discord Rich Presence** — while a song plays,
+your Discord profile shows *"Listening to Synapz Music — &lt;song&gt; by &lt;artist&gt;"*
+with album art and a live progress bar.
+
+> Why desktop for this? Discord Rich Presence is delivered over a local IPC
+> socket that a browser tab can't reach. The desktop shell talks to the Discord
+> client directly — no browser extension or separate helper needed.
+
+### Set up Discord Rich Presence (one time)
+
+1. Create an application at <https://discord.com/developers/applications> and
+   **name it exactly `Synapz Music`** (that name appears after "Listening to").
+2. Copy its **Application (Client) ID**.
+   - For `npm run dev:electron`, put it in `.env` as `DISCORD_CLIENT_ID=…`.
+   - For a **packaged** build, either set `DISCORD_CLIENT_ID` in the environment
+     before building, or hard-code it in [`electron/main.cjs`](electron/main.cjs)
+     (`const DISCORD_CLIENT_ID = '…'`) so it ships inside the app.
+3. *(Optional, nicer art)* Under **Rich Presence → Art Assets**, upload
+   `synapz_logo` (large-image fallback) and `playing` / `paused` (small badges).
+4. The Discord **desktop app must be running**. Toggle presence any time under
+   **Account → Discord presence**.
+
+### Run & build locally
+
+```bash
+npm run dev:electron    # Vite + Electron (hot reload); loads the dev server
+npm run dist:win        # build a Windows installer  -> release/
+npm run dist:mac        # build a macOS .dmg (run on macOS or CI)
+```
+
+`npm run dist` builds the current platform. Each `dist:*` regenerates the app
+icon from `public/icon.svg` (`npm run icons`), bundles the UI, then packages with
+electron-builder. Installers land in `release/` (gitignored).
+
+> **macOS note:** the bundled `yt-dlp` under `bin/` is the Windows binary. For a
+> Mac build, also place the macOS `yt-dlp` binary at `bin/yt-dlp` before packaging
+> (it's copied into the app's resources). Building a `.dmg` requires running on
+> macOS (or CI) — electron-builder can't produce mac targets from Windows.
+
+### Publish a downloadable release (the "Get the desktop app" link)
+
+The web app's sidebar has a **Get the desktop app** link (web build only) pointing
+at this repo's [latest GitHub Release](https://github.com/crusheR-058/SynapzStudio/releases/latest).
+To populate it, push a version tag and let CI build + attach both installers:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on
+`windows-latest` + `macos-latest`, downloads the correct `yt-dlp` per OS, builds
+the `.exe` and `.dmg`, and uploads them to the Release (via `GITHUB_TOKEN` — no
+secrets to configure). Anyone can then click the link and download for their OS.
+
+> Builds are **unsigned**, so first launch shows Windows SmartScreen ("More info →
+> Run anyway") or macOS Gatekeeper ("right-click → Open"). Add a code-signing
+> certificate (`CSC_LINK`/`CSC_KEY_PASSWORD` for Windows, an Apple Developer cert
+> for macOS) to remove those prompts.
+
 ## Accounts, login & Premium
 
 - On first load you'll see a **login screen**. Click **Continue as guest** to jump

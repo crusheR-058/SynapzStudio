@@ -18,6 +18,7 @@ import {
 } from '../lib/cloud'
 import { fetchTrending } from '../lib/audius'
 import { BOLLYWOOD_TRACKS } from '../lib/bollywood'
+import { pushPresence, clearPresence } from '../lib/discord'
 
 // Fisher–Yates; used to seed autoplay radio from the baked catalog.
 function shuffled<T>(arr: T[]): T[] {
@@ -214,6 +215,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const repeatRef = useRef(repeat)
   const progressRef = useRef(0)
   const currentTrackRef = useRef<Track | null>(null)
+  const isPlayingRef = useRef(false)
   const volRef = useRef(muted ? 0 : volume) // 0-100, effective (0 when muted)
   const volLevelRef = useRef(volume) // 0-100, stored level (ignores mute)
   const rateRef = useRef(rate)
@@ -231,6 +233,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => void (repeatRef.current = repeat), [repeat])
   useEffect(() => void (progressRef.current = progress), [progress])
   useEffect(() => void (currentTrackRef.current = currentTrack), [currentTrack])
+  useEffect(() => void (isPlayingRef.current = isPlaying), [isPlaying])
   useEffect(() => void (rateRef.current = rate), [rate])
   useEffect(() => void (crossfadeRef.current = crossfade), [crossfade])
   useEffect(() => void (sleepRef.current = sleep), [sleep])
@@ -705,6 +708,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         active().currentTime = seconds
       }
       setProgress(seconds)
+      // Resync the Discord progress bar (desktop only; no-op elsewhere).
+      pushPresence(currentTrackRef.current, {
+        isPlaying: isPlayingRef.current,
+        positionSec: seconds,
+      })
     },
     [active, cancelCrossfade],
   )
@@ -1129,6 +1137,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ms.setActionHandler('nexttrack', () => next())
     ms.setActionHandler('previoustrack', () => prev())
   }, [currentTrack, togglePlay, next, prev])
+
+  // Discord Rich Presence (desktop app only — no-op on the web build). Fires on
+  // track change + play/pause; Discord animates the progress bar itself from the
+  // timestamps we send, so no per-second updates are needed. seekTo() re-pushes
+  // to resync the bar after a scrub.
+  useEffect(() => {
+    if (currentTrack) pushPresence(currentTrack, { isPlaying, positionSec: progressRef.current })
+    else clearPresence()
+  }, [currentTrack, isPlaying])
 
   // Keyboard shortcuts (ignored while typing in a field).
   useEffect(() => {
