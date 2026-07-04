@@ -18,6 +18,7 @@ import {
 } from '../lib/cloud'
 import { fetchTrending } from '../lib/audius'
 import { BOLLYWOOD_TRACKS } from '../lib/bollywood'
+import { probeYtStream, ytStreamUsable, ytStreamUrl, markYtStreamFailed } from '../lib/youtube'
 
 // Fisher–Yates; used to seed autoplay radio from the baked catalog.
 function shuffled<T>(arr: T[]): T[] {
@@ -37,16 +38,26 @@ declare global {
   }
 }
 
-// A track uses the YouTube IFrame player only when it's a YouTube track WITHOUT
-// a direct stream URL (i.e. the Data-API path). yt-dlp YouTube tracks carry a
-// /yt/stream URL and play through the normal <audio> element instead.
-function isIframeTrack(t: Track | null): boolean {
-  return !!t && t.source === 'youtube' && !t.streamUrl
+// The <audio>-playable source for a track: its direct streamUrl if it has one,
+// else — for a YouTube track — the backend audio proxy (/yt/stream) when that
+// backend is reachable. Empty string means "no <audio> source; use the IFrame".
+// Playing YouTube through <audio> is what lets those tracks keep going when the
+// phone is locked (the IFrame embed is force-paused on lock by mobile browsers).
+function streamSrcFor(t: Track | null): string {
+  if (!t) return ''
+  if (t.streamUrl) return t.streamUrl
+  if (t.source === 'youtube' && ytStreamUsable(t.id)) return ytStreamUrl(t.id)
+  return ''
 }
-// Crossfade only works for tracks that play through an <audio> element — i.e.
-// NOT the YouTube IFrame. This is the gate for that feature.
+// A track uses the YouTube IFrame player only when we have NO <audio> source for
+// it (no direct URL and the stream proxy isn't available).
+function isIframeTrack(t: Track | null): boolean {
+  return !!t && t.source === 'youtube' && !streamSrcFor(t)
+}
+// Crossfade / normal <audio> playback works for any track we have a source for
+// — i.e. NOT the YouTube IFrame. This is the gate for that feature.
 function isAudioElTrack(t: Track | null): boolean {
-  return !!t && !isIframeTrack(t) && !!t.streamUrl
+  return !!t && !isIframeTrack(t) && !!streamSrcFor(t)
 }
 
 interface RawStats {
@@ -201,6 +212,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [crossfade, setCrossfadeState] = useState<number>(() => load(LS.crossfade, 0))
   const [sleep, setSleep] = useState<SleepState>({ endsAt: null, endOfTrack: false })
   const [autoplay, setAutoplayState] = useState<boolean>(() => load(LS.autoplay, true))
+  // Flipped true once we confirm the backend audio-stream proxy is reachable, so
+  // YouTube tracks route through <audio> (background-capable) instead of the IFrame.
+  const [, setStreamReady] = useState(false)
 
   const statsRef = useRef<RawStats>(
     load(LS.stats, { listenedSec: 0, plays: {}, daily: {}, tracks: {} }),
@@ -214,6 +228,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const repeatRef = useRef(repeat)
   const progressRef = useRef(0)
   const currentTrackRef = useRef<Track | null>(null)
+  const isPlayingRef = useRef(isPlaying)
   const volRef = useRef(muted ? 0 : volume) // 0-100, effective (0 when muted)
   const volLevelRef = useRef(volume) // 0-100, stored level (ignores mute)
   const rateRef = useRef(rate)
@@ -224,6 +239,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const shufHistRef = useRef<number[]>([]) // recently shuffled-to indices (smart shuffle)
   const handleEndedRef = useRef<() => void>(() => {})
   const advanceRef = useRef<() => void>(() => {})
+  const loadAndPlayRef = useRef<(t: Track) => void>(() => {})
   useEffect(() => void (queueRef.current = queue), [queue])
   useEffect(() => void (indexRef.current = index), [index])
   useEffect(() => void (userQueueRef.current = userQueue), [userQueue])
@@ -231,6 +247,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => void (repeatRef.current = repeat), [repeat])
   useEffect(() => void (progressRef.current = progress), [progress])
   useEffect(() => void (currentTrackRef.current = currentTrack), [currentTrack])
+  useEffect(() => void (isPlayingRef.current = isPlaying), [isPlaying])
   useEffect(() => void (rateRef.current = rate), [rate])
   useEffect(() => void (crossfadeRef.current = crossfade), [crossfade])
   useEffect(() => void (sleepRef.current = sleep), [sleep])
@@ -398,7 +415,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const a = active()
         a.volume = volRef.current / 100
         a.playbackRate = rateRef.current
-        a.src = track.streamUrl
+        a.src = streamSrcFor(track)
         a.play().catch((err: any) => {
           // AbortError fires when we switch tracks before the previous load
           // finishes — that's expected, not a real failure.
@@ -731,7 +748,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const a = active()
       const b = idle()
       fadingRef.current = true
-      b.src = sel.track.streamUrl
+      b.src = streamSrcFor(sel.track)
       b.currentTime = 0
       b.volume = 0
       b.playbackRate = rateRef.current
@@ -865,6 +882,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [active, next])
   useEffect(() => void (handleEndedRef.current = handleEnded), [handleEnded])
   useEffect(() => void (advanceRef.current = next), [next])
+  useEffect(() => void (loadAndPlayRef.current = loadAndPlay), [loadAndPlay])
 
   const pauseAllRef = useRef<() => void>(() => {})
   useEffect(() => {
@@ -1081,8 +1099,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const onEnded = () => isActive() && handleEndedRef.current()
       const onError = () => {
         if (!isActive()) return
-        // Suppress only for IFrame (Data-API) tracks, which don't use <audio>.
-        if (!isIframeTrack(currentTrackRef.current)) {
+        const t = currentTrackRef.current
+        // A proxied YouTube stream that fails to load → mark this id and fall
+        // back to the YouTube IFrame for it (which always works), instead of
+        // surfacing an error. Only applies to YouTube tracks with no direct URL
+        // that were being played through <audio>.
+        if (t && t.source === 'youtube' && !t.streamUrl && !isIframeTrack(t)) {
+          markYtStreamFailed(t.id)
+          loadAndPlayRef.current(t)
+          return
+        }
+        // Suppress only for IFrame tracks, which don't use <audio>.
+        if (!isIframeTrack(t)) {
           setIsBuffering(false)
           setError('This track failed to load.')
         }
@@ -1111,24 +1139,91 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => cleanups.forEach((c) => c())
   }, [decks, beginCrossfade, peekNext])
 
-  // Media Session API — OS-level media keys & lockscreen controls.
+  // Detect the backend audio-stream proxy once at startup. When present, YouTube
+  // tracks play through <audio> (so they keep going when the screen is locked);
+  // when absent (e.g. Vercel), they transparently stay on the YouTube IFrame.
+  useEffect(() => {
+    let cancelled = false
+    probeYtStream().then((ok) => {
+      if (!cancelled && ok) setStreamReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Media Session API — OS-level media keys & lock-screen controls. This is
+  // ALSO what lets an <audio>-element track keep playing when the phone is
+  // locked / the tab is backgrounded: a live media session with metadata +
+  // handlers tells the OS "this page owns an audio session, keep it alive".
+  // (YouTube-IFrame tracks are exempt — the embed is force-paused on lock by
+  // the browser, which we can't override from here.)
   useEffect(() => {
     if (!('mediaSession' in navigator)) return
     const ms = navigator.mediaSession
     if (currentTrack) {
+      const art = currentTrack.artworkLarge || currentTrack.artwork
       ms.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.artist,
-        artwork: currentTrack.artwork
-          ? [{ src: currentTrack.artwork, sizes: '480x480', type: 'image/jpeg' }]
+        album: 'Synapz Music',
+        // Offer several sizes so every OS lock screen finds one it likes.
+        artwork: art
+          ? [
+              { src: art, sizes: '96x96', type: 'image/jpeg' },
+              { src: art, sizes: '192x192', type: 'image/jpeg' },
+              { src: art, sizes: '512x512', type: 'image/jpeg' },
+            ]
           : [],
       })
     }
-    ms.setActionHandler('play', () => togglePlay())
-    ms.setActionHandler('pause', () => togglePlay())
-    ms.setActionHandler('nexttrack', () => next())
-    ms.setActionHandler('previoustrack', () => prev())
-  }, [currentTrack, togglePlay, next, prev])
+    // Some browsers throw on actions they don't support — guard each one.
+    const set = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        ms.setActionHandler(action, handler)
+      } catch {
+        /* action unsupported on this platform */
+      }
+    }
+    // Use explicit play/pause (not a blind toggle) so a double-tap on the lock
+    // screen can't flip playback the wrong way.
+    set('play', () => {
+      if (!isPlayingRef.current) togglePlay()
+    })
+    set('pause', () => {
+      if (isPlayingRef.current) togglePlay()
+    })
+    set('nexttrack', () => next())
+    set('previoustrack', () => prev())
+    set('seekbackward', (d) => seekTo(Math.max(0, progressRef.current - (d.seekOffset || 10))))
+    set('seekforward', (d) => seekTo(progressRef.current + (d.seekOffset || 10)))
+    set('seekto', (d) => {
+      if (typeof d.seekTime === 'number') seekTo(d.seekTime)
+    })
+    set('stop', () => pauseAllRef.current())
+  }, [currentTrack, togglePlay, next, prev, seekTo])
+
+  // Mirror the live playing/paused state to the lock-screen widget so its
+  // button and "now playing" state stay correct even while backgrounded.
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'
+  }, [isPlaying])
+
+  // Feed the lock-screen scrubber with the real position/duration/speed.
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return
+    if (!duration || !Number.isFinite(duration)) return
+    try {
+      navigator.mediaSession.setPositionState({
+        duration,
+        position: Math.min(Math.max(progress, 0), duration),
+        playbackRate: rate || 1,
+      })
+    } catch {
+      /* position momentarily out of range mid-seek — ignore */
+    }
+  }, [progress, duration, rate])
 
   // Keyboard shortcuts (ignored while typing in a field).
   useEffect(() => {
