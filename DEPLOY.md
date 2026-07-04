@@ -75,82 +75,10 @@ Both use your final Vercel domain (swap in yours):
 
 (Allow ~1–2 min for Google to propagate, then hard-refresh the site.)
 
-## Background playback (locked-screen audio) — two modes
-
-Whether a song keeps playing when the phone is locked depends on **how it's
-streamed**, because mobile browsers force-pause embedded YouTube on lock:
-
-| Track | Vercel (current) | Self-hosted Node backend |
-| --- | --- | --- |
-| Audius / direct-stream | ✅ backgrounds | ✅ backgrounds |
-| Bollywood / Hollywood / YouTube | ❌ IFrame → pauses on lock | ✅ streams via `<audio>` → backgrounds |
-
-**Vercel is serverless**, so it can't run `yt-dlp` — YouTube tracks stay on the
-IFrame and pause on lock. That's unavoidable there. Everything still works; only
-locked-screen playback of YouTube tracks is affected.
-
-**To make ALL songs background-play**, run the Node backend (`server/index.mjs`)
-on a persistent host — it exposes `/yt/stream`, a yt-dlp audio proxy, and the
-frontend auto-detects it (via `/yt/capabilities`) and routes YouTube tracks
-through a normal `<audio>` element. Single-server run:
-
-```bash
-npm run build          # emits dist/
-node server/index.mjs  # serves dist/ + /api + /yt/stream on ONE port (:8787)
-```
-
-### Recommended: one container (Docker) on Render
-
-The repo ships a `Dockerfile` (installs yt-dlp, builds the frontend, runs the
-server) and a `render.yaml` Blueprint. The container needs **no API keys** — both
-playback *and* search go through the keyless yt-dlp helper.
-
-1. Render dashboard → **New +** → **Blueprint** → pick this repo → **Apply**.
-   (`render.yaml` defines the Docker web service and auto-generates
-   `SESSION_SECRET`.)
-2. When it's **Live**, sanity-check:
-   - `/api/health` → `{"ok":true,"runtime":"local"}`
-   - `/yt/capabilities` → `{"stream":true}`  ← background streaming is on
-3. On your phone: open the URL → **Add to Home Screen** → play a song → lock it.
-
-Same Dockerfile deploys to Railway / Fly.io / any Docker host.
-
-**Optional keys** (all default off, app degrades gracefully): add
-`VITE_GOOGLE_CLIENT_ID` (real Google login vs. demo account),
-`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (cross-device synced likes) as
-env vars in the host — they're wired as Docker build args.
-
-### Requirements / caveats
-
-- **yt-dlp**: the Docker image installs it on `PATH`; for a bare
-  `node server/index.mjs` run it must exist at `bin/yt-dlp` (Linux) /
-  `bin/yt-dlp.exe` (Windows), or point `YTDLP_PATH` at it. Keep it updated
-  (`yt-dlp -U`) — YouTube changes break old versions.
-- **Datacenter-IP risk**: YouTube may serve a "confirm you're not a bot" wall to
-  cloud IPs (Render/Railway/Fly), so some tracks fail extraction there and fall
-  back to the IFrame. A **residential IP** (your own always-on machine) is far
-  more reliable; expose it over HTTPS with a free Cloudflare Tunnel. Audius
-  tracks always background-play regardless.
-- **Getting past the bot-wall with cookies** (needed on cloud hosts): export
-  YouTube cookies (Netscape `cookies.txt`, e.g. via the "Get cookies.txt LOCALLY"
-  browser extension while signed in to youtube.com — use a throwaway Google
-  account), then make the file available to the server and point `YTDLP_COOKIES`
-  at it. On **Render**: add a **Secret File** named `cookies.txt` (mounted at
-  `/etc/secrets/cookies.txt`) and set env var `YTDLP_COOKIES=/etc/secrets/cookies.txt`.
-  Cookies expire periodically and must be re-exported; even so, datacenter IPs
-  aren't guaranteed.
-- Extraction adds ~2–5s to a YouTube track's **first** play; the resolved URL is
-  cached ~5h, and bytes are proxied through the server (googlevideo URLs are
-  IP-locked, so redirecting won't work — proxying is required).
-- If a stream fails, that track silently falls back to the IFrame.
-- Install the site as a PWA ("Add to Home Screen") for the most reliable
-  Android background behaviour.
-
 ## Notes / trade-offs
 
-- **Search quota:** on **Vercel**, search uses the YouTube Data API (~100
-  searches/day on the free tier). On a **self-hosted / Docker** deploy, search is
-  keyless (yt-dlp `/yt/search`) — no quota. Audius is keyless and always works.
+- **Search quota:** production search uses the YouTube Data API (~100 searches/
+  day on the free tier). Audius is keyless and unlimited; it always works.
 - **Sessions are in the cookie**, signed with `SESSION_SECRET` (HMAC — a user
   can't forge premium). They're per-browser and last 30 days. There's no
   cross-device account store; add Vercel KV/Postgres later if you want that.
