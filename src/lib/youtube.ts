@@ -50,6 +50,42 @@ export function hasYtKey(): boolean {
   return !!getYtKey()
 }
 
+/* ------------------------------------------------- background audio streaming */
+// When a Synapz backend with the yt-dlp stream proxy is reachable (self-hosted
+// / local), YouTube tracks can play through a real <audio> element via
+// /yt/stream — which keeps playing when the phone is locked. On Vercel (no /yt
+// routes) the probe fails and the app falls back to the YouTube IFrame embed.
+let _streamCap: boolean | null = null
+const _streamFailed = new Set<string>()
+
+export async function probeYtStream(): Promise<boolean> {
+  if (_streamCap !== null) return _streamCap
+  try {
+    const res = await fetch('/yt/capabilities', { cache: 'no-store' })
+    const j = res.ok ? await res.json() : null
+    _streamCap = j?.stream === true
+  } catch {
+    _streamCap = false
+  }
+  return _streamCap
+}
+
+// True only for ids we can actually stream — capability confirmed AND this id
+// hasn't already failed extraction (in which case we fall back to the IFrame).
+export function ytStreamUsable(id: string): boolean {
+  return _streamCap === true && !_streamFailed.has(id)
+}
+
+export function ytStreamUrl(id: string): string {
+  return `/yt/stream?id=${encodeURIComponent(id)}`
+}
+
+// Mark a video id whose proxied stream failed so the player reverts it to the
+// IFrame and never retries the broken stream this session.
+export function markYtStreamFailed(id: string): void {
+  _streamFailed.add(id)
+}
+
 export class YtError extends Error {
   code: 'NO_KEY' | 'QUOTA_OR_KEY' | 'HTTP'
   constructor(code: 'NO_KEY' | 'QUOTA_OR_KEY' | 'HTTP', message?: string) {

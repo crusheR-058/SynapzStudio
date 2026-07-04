@@ -75,6 +75,42 @@ Both use your final Vercel domain (swap in yours):
 
 (Allow ~1–2 min for Google to propagate, then hard-refresh the site.)
 
+## Background playback (locked-screen audio) — two modes
+
+Whether a song keeps playing when the phone is locked depends on **how it's
+streamed**, because mobile browsers force-pause embedded YouTube on lock:
+
+| Track | Vercel (current) | Self-hosted Node backend |
+| --- | --- | --- |
+| Audius / direct-stream | ✅ backgrounds | ✅ backgrounds |
+| Bollywood / Hollywood / YouTube | ❌ IFrame → pauses on lock | ✅ streams via `<audio>` → backgrounds |
+
+**Vercel is serverless**, so it can't run `yt-dlp` — YouTube tracks stay on the
+IFrame and pause on lock. That's unavoidable there. Everything still works; only
+locked-screen playback of YouTube tracks is affected.
+
+**To make ALL songs background-play**, run the Node backend (`server/index.mjs`)
+on a persistent host — it exposes `/yt/stream`, a yt-dlp audio proxy, and the
+frontend auto-detects it (via `/yt/capabilities`) and routes YouTube tracks
+through a normal `<audio>` element. Single-server run:
+
+```bash
+npm run build          # emits dist/
+node server/index.mjs  # serves dist/ + /api + /yt/stream on ONE port (:8787)
+```
+
+Then open `http://<host>:8787`. Good persistent hosts: a VPS, Render, Railway,
+Fly.io, or your own always-on machine. Requirements/caveats:
+
+- The `yt-dlp` binary must exist at `bin/yt-dlp` (Linux) / `bin/yt-dlp.exe`
+  (Windows). Keep it updated (`yt-dlp -U`) — YouTube changes break old versions.
+- Extraction adds ~2–5s to a YouTube track's **first** play; the resolved URL is
+  cached ~5h, and bytes are proxied through the server (googlevideo URLs are
+  IP-locked, so redirecting won't work — proxying is required).
+- If a stream fails, that track silently falls back to the IFrame.
+- Install the site as a PWA ("Add to Home Screen") for the most reliable
+  Android background behaviour.
+
 ## Notes / trade-offs
 
 - **Search quota:** production search uses the YouTube Data API (~100 searches/
