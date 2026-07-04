@@ -131,6 +131,14 @@ env vars in the host — they're wired as Docker build args.
   back to the IFrame. A **residential IP** (your own always-on machine) is far
   more reliable; expose it over HTTPS with a free Cloudflare Tunnel. Audius
   tracks always background-play regardless.
+- **Getting past the bot-wall with cookies** (needed on cloud hosts): export
+  YouTube cookies (Netscape `cookies.txt`, e.g. via the "Get cookies.txt LOCALLY"
+  browser extension while signed in to youtube.com — use a throwaway Google
+  account), then make the file available to the server and point `YTDLP_COOKIES`
+  at it. On **Render**: add a **Secret File** named `cookies.txt` (mounted at
+  `/etc/secrets/cookies.txt`) and set env var `YTDLP_COOKIES=/etc/secrets/cookies.txt`.
+  Cookies expire periodically and must be re-exported; even so, datacenter IPs
+  aren't guaranteed.
 - Extraction adds ~2–5s to a YouTube track's **first** play; the resolved URL is
   cached ~5h, and bytes are proxied through the server (googlevideo URLs are
   IP-locked, so redirecting won't work — proxying is required).

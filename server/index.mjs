@@ -38,6 +38,17 @@ const ROOT = process.cwd()
 const BUNDLED_YTDLP = path.join(ROOT, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
 const YTDLP = process.env.YTDLP_PATH || (existsSync(BUNDLED_YTDLP) ? BUNDLED_YTDLP : 'yt-dlp')
 
+// Optional YouTube cookies (Netscape cookies.txt) to get past the datacenter-IP
+// "Sign in to confirm you're not a bot" wall that cloud hosts (Render/Railway/
+// Fly) hit. Point YTDLP_COOKIES at the file (e.g. a Render Secret File mounted
+// at /etc/secrets/cookies.txt). Completely inert when unset.
+const YT_COOKIES =
+  process.env.YTDLP_COOKIES && existsSync(process.env.YTDLP_COOKIES) ? process.env.YTDLP_COOKIES : ''
+// Prepend --cookies to any yt-dlp arg list when cookies are configured.
+function ytArgs(...args) {
+  return YT_COOKIES ? ['--cookies', YT_COOKIES, ...args] : args
+}
+
 function run(args, timeout = 25000) {
   return new Promise((resolve, reject) => {
     execFile(YTDLP, args, { timeout, maxBuffer: 1024 * 1024 * 24 }, (err, stdout, stderr) => {
@@ -99,13 +110,9 @@ app.get('/yt/search', async (req, res) => {
   if (!q) return res.json([])
   const n = Math.min(50, Math.max(1, parseInt(String(req.query.n || '40'), 10) || 40))
   try {
-    const out = await run([
-      '--flat-playlist',
-      '-J',
-      '--no-warnings',
-      '--ignore-config',
-      `ytsearch${n}:${q}`,
-    ])
+    const out = await run(
+      ytArgs('--flat-playlist', '-J', '--no-warnings', '--ignore-config', `ytsearch${n}:${q}`),
+    )
     const data = JSON.parse(out)
     const items = (data.entries || []).filter(Boolean).map((e) => ({
       id: e.id,
@@ -141,14 +148,14 @@ async function resolveAudioUrl(id) {
   if (cached && cached.exp > Date.now()) return cached.url
   // Prefer m4a/AAC — the one audio codec every browser (incl. iOS Safari) plays.
   const out = await run(
-    [
+    ytArgs(
       '-f',
       'bestaudio[ext=m4a]/bestaudio/best',
       '-g',
       '--no-warnings',
       '--ignore-config',
       `https://www.youtube.com/watch?v=${id}`,
-    ],
+    ),
     30000,
   )
   const url = out.trim().split('\n').filter(Boolean).pop()
