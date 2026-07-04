@@ -1,8 +1,6 @@
 import express from 'express'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
-import { existsSync } from 'node:fs'
-import { Readable } from 'node:stream'
 
 // Load .env locally so SPOTIFY_CLIENT_ID/SECRET (and SESSION_SECRET) are
 // available to this dev server. Node 20.6+/24 built-in — no dotenv dependency.
@@ -32,22 +30,7 @@ import { importSpotify, SpotifyError } from '../lib/spotify.mjs'
 
 const PORT = process.env.PORT || 8787
 const ROOT = process.cwd()
-// Locate yt-dlp: an explicit YTDLP_PATH wins (set it in Docker / hosts), else
-// the bundled binary in bin/ (local dev), else fall back to `yt-dlp` on PATH
-// (e.g. installed system-wide in a container).
-const BUNDLED_YTDLP = path.join(ROOT, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
-const YTDLP = process.env.YTDLP_PATH || (existsSync(BUNDLED_YTDLP) ? BUNDLED_YTDLP : 'yt-dlp')
-
-// Optional YouTube cookies (Netscape cookies.txt) to get past the datacenter-IP
-// "Sign in to confirm you're not a bot" wall that cloud hosts (Render/Railway/
-// Fly) hit. Point YTDLP_COOKIES at the file (e.g. a Render Secret File mounted
-// at /etc/secrets/cookies.txt). Completely inert when unset.
-const YT_COOKIES =
-  process.env.YTDLP_COOKIES && existsSync(process.env.YTDLP_COOKIES) ? process.env.YTDLP_COOKIES : ''
-// Prepend --cookies to any yt-dlp arg list when cookies are configured.
-function ytArgs(...args) {
-  return YT_COOKIES ? ['--cookies', YT_COOKIES, ...args] : args
-}
+const YTDLP = path.join(ROOT, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
 
 function run(args, timeout = 25000) {
   return new Promise((resolve, reject) => {
@@ -110,9 +93,13 @@ app.get('/yt/search', async (req, res) => {
   if (!q) return res.json([])
   const n = Math.min(50, Math.max(1, parseInt(String(req.query.n || '40'), 10) || 40))
   try {
-    const out = await run(
-      ytArgs('--flat-playlist', '-J', '--no-warnings', '--ignore-config', `ytsearch${n}:${q}`),
-    )
+    const out = await run([
+      '--flat-playlist',
+      '-J',
+      '--no-warnings',
+      '--ignore-config',
+      `ytsearch${n}:${q}`,
+    ])
     const data = JSON.parse(out)
     const items = (data.entries || []).filter(Boolean).map((e) => ({
       id: e.id,
@@ -131,106 +118,6 @@ app.get('/yt/search', async (req, res) => {
   }
 })
 
-// --- keyless youtube AUDIO stream proxy (yt-dlp) -----------------------
-// This is what lets Bollywood/Hollywood/YouTube tracks play through a normal
-// <audio> element (and therefore keep playing when the phone is locked), instead
-// of the YouTube IFrame embed which mobile browsers force-pause on lock.
-//
-// How it works: yt-dlp extracts the direct googlevideo audio URL (cached ~5h),
-// then we PROXY the bytes. Proxying (rather than redirecting) is required —
-// googlevideo URLs are IP-locked to whoever requested them, so the fetch must
-// originate from this server, not the user's browser. We forward the client's
-// Range header so seeking works.
-const streamCache = new Map() // id -> { url, exp }
-
-async function resolveAudioUrl(id) {
-  const cached = streamCache.get(id)
-  if (cached && cached.exp > Date.now()) return cached.url
-  // Prefer m4a/AAC — the one audio codec every browser (incl. iOS Safari) plays.
-  const out = await run(
-    ytArgs(
-      '-f',
-      'bestaudio[ext=m4a]/bestaudio/best',
-      '-g',
-      '--no-warnings',
-      '--ignore-config',
-      `https://www.youtube.com/watch?v=${id}`,
-    ),
-    30000,
-  )
-  const url = out.trim().split('\n').filter(Boolean).pop()
-  if (!url) throw new Error('no audio url')
-  streamCache.set(id, { url, exp: Date.now() + 5 * 60 * 60 * 1000 })
-  return url
-}
-
-// Lets the frontend detect at runtime that background streaming is available.
-// On Vercel (no /yt routes) this 404s, so the app transparently falls back to
-// the IFrame — nothing breaks.
-app.get('/yt/capabilities', (_req, res) => res.json({ stream: true }))
-
-app.get('/yt/stream', async (req, res) => {
-  const id = String(req.query.id || '').trim()
-  if (!/^[\w-]{6,15}$/.test(id)) return res.status(400).end('bad id')
-
-  const fetchUpstream = async (url) => {
-    const headers = { 'user-agent': 'Mozilla/5.0', accept: '*/*' }
-    if (req.headers.range) headers.range = req.headers.range
-    return fetch(url, { headers })
-  }
-
-  try {
-    let url = await resolveAudioUrl(id)
-    let upstream = await fetchUpstream(url)
-    // A cached URL can expire / get rejected — re-resolve once and retry.
-    if (upstream.status === 403 || upstream.status === 410 || upstream.status === 404) {
-      streamCache.delete(id)
-      url = await resolveAudioUrl(id)
-      upstream = await fetchUpstream(url)
-    }
-    if (!upstream.ok && upstream.status !== 206) {
-      return res.status(502).end('upstream error')
-    }
-    res.status(upstream.status)
-    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
-      const v = upstream.headers.get(h)
-      if (v) res.setHeader(h, v)
-    }
-    if (!upstream.headers.get('accept-ranges')) res.setHeader('accept-ranges', 'bytes')
-    if (!upstream.headers.get('content-type')) res.setHeader('content-type', 'audio/mp4')
-    res.setHeader('cache-control', 'no-store')
-    if (!upstream.body) return res.end()
-    const node = Readable.fromWeb(upstream.body)
-    req.on('close', () => node.destroy())
-    node.on('error', () => {
-      try {
-        res.end()
-      } catch {
-        /* client already gone */
-      }
-    })
-    node.pipe(res)
-  } catch (e) {
-    res.status(500).end(String(e?.message || e))
-  }
-})
-
 app.get('/api/health', (_req, res) => res.json({ ok: true, runtime: 'local' }))
-
-// --- serve the built SPA (single-server / self-host deploys) -------------
-// When a production build exists in /dist, this same process can serve the
-// whole app on one origin — so /yt/stream is same-origin and background audio
-// works end-to-end from `node server/index.mjs`. Harmless in dev (Vite serves
-// the frontend and only proxies /api + /yt here).
-const DIST = path.join(ROOT, 'dist')
-if (existsSync(DIST)) {
-  app.use(express.static(DIST))
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/yt')) {
-      return res.sendFile(path.join(DIST, 'index.html'))
-    }
-    next()
-  })
-}
 
 app.listen(PORT, () => console.log(`[synapz-api] listening on http://localhost:${PORT}`))
