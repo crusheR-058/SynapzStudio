@@ -121,8 +121,12 @@ jobs:
             --title "Synapz Music ${{ github.ref_name }}" \
             --notes "Synapz Music desktop app ${{ github.ref_name }}.
 
+          **Downloads**
           - **Windows:** \`Synapz-Music-Setup-*.exe\`
-          - **macOS (Apple Silicon):** \`Synapz-Music-*-arm64.dmg\`
+          - **macOS — Apple Silicon (M1/M2/M3):** \`Synapz-Music-*-arm64.dmg\`
+          - **macOS — Intel:** \`Synapz-Music-*-x64.dmg\`
 
-          Builds are unsigned: on first launch, Windows shows SmartScreen (More info -> Run anyway) and macOS shows Gatekeeper (right-click -> Open)." \
+          **Opening it (builds are unsigned):**
+          - **Windows:** SmartScreen → *More info* → *Run anyway*.
+          - **macOS:** the app is ad-hoc signed, so **right-click the app → Open → Open**. If macOS still says it's \"damaged\", open Terminal and run \`xattr -cr \"/Applications/Synapz Music.app\"\`, then open it." \
             artifacts/*

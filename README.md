@@ -126,8 +126,8 @@ at this repo's [latest GitHub Release](https://github.com/crusheR-058/SynapzStud
 To populate it, push a version tag and let CI build + attach both installers:
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) builds on
@@ -141,6 +141,17 @@ a single `publish` job uploads everything to **one** GitHub Release via
 
 > Publishing from each matrix job in parallel races and splits assets across
 > duplicate draft releases — that's why building and publishing are separate jobs.
+
+### Opening the unsigned builds
+
+- **Windows:** SmartScreen → **More info → Run anyway**.
+- **macOS:** the `.dmg` app is **ad-hoc signed** (a free local signature) so Apple
+  Silicon will run it — **right-click the app → Open → Open**. Ad-hoc signing is
+  what stops the *"…is damaged and can't be opened"* error that plain-unsigned
+  arm64 apps hit. If macOS still complains, clear the download quarantine:
+  ```bash
+  xattr -cr "/Applications/Synapz Music.app"
+  ```
 
 ### Code signing (optional — removes the "unverified app" warnings)
 
