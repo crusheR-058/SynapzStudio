@@ -224,3 +224,25 @@ src/
   fails to load, just retry.
 - Some tracks on Audius are gated/premium and won't stream for free; those are
   filtered out where possible.
+
+## Disclaimer
+
+**Synapz Music is a personal, non-commercial, educational project — not a product
+or a service, and not published or distributed to the public.**
+
+- **Not affiliated** with YouTube, Google, Spotify, Audius, Discord, or any music
+  label, artist, or rights holder. All trademarks belong to their respective owners.
+- **Audius** is used through its public API for legal, full-track streaming.
+- The optional **YouTube (`yt-dlp`) helper** extracts audio for **personal, local
+  listening only**. Doing so may conflict with YouTube's Terms of Service. You are
+  solely responsible for how you use it and for complying with YouTube's ToS,
+  `yt-dlp`'s terms, and the copyright laws of your country.
+- The baked song lists contain only public **references** (YouTube video IDs,
+  titles, artists) — **no audio or copyrighted media files** are stored or
+  distributed by this repository.
+- Provided **"as is"**, with no warranty and no liability (see [`LICENSE`](LICENSE)).
+  Nothing here is legal advice.
+
+## License
+
+Released under the [MIT License](LICENSE). © 2026 crusheR-058.
