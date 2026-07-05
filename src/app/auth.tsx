@@ -28,6 +28,16 @@ interface AuthValue {
 
 const AuthContext = createContext<AuthValue | null>(null)
 
+// Desktop shell bridge (present only inside the Electron app).
+interface DesktopBridge {
+  isDesktop?: boolean
+  openOAuth?: (url: string) => void
+  consumePendingOAuth?: () => Promise<string | null>
+  onOAuthCallback?: (cb: (url: string) => void) => () => void
+}
+const desktop = (): DesktopBridge | undefined =>
+  (window as unknown as { synapz?: DesktopBridge }).synapz
+
 // Map a Supabase session into the app's lightweight User shape.
 function mapUser(session: Session | null): User | null {
   const u = session?.user
@@ -65,6 +75,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  // Desktop only: complete sign-in when the synapz:// OAuth deep link comes back
+  // from the system browser. Handles both PKCE (?code) and implicit (#tokens).
+  useEffect(() => {
+    const sb = supabase
+    const bridge = desktop()
+    if (!sb || !bridge?.isDesktop) return
+    const complete = async (callbackUrl: string) => {
+      try {
+        const u = new URL(callbackUrl)
+        const code = u.searchParams.get('code')
+        if (code) {
+          await sb.auth.exchangeCodeForSession(code)
+          return
+        }
+        const frag = new URLSearchParams(u.hash.replace(/^#/, ''))
+        const access_token = frag.get('access_token')
+        const refresh_token = frag.get('refresh_token')
+        if (access_token && refresh_token) {
+          await sb.auth.setSession({ access_token, refresh_token })
+        }
+      } catch (err) {
+        console.error('OAuth callback failed', err)
+      }
+    }
+    const off = bridge.onOAuthCallback?.(complete)
+    // Cold start: pick up a deep link that arrived before this listener mounted.
+    bridge.consumePendingOAuth?.().then((u) => {
+      if (u) complete(u)
+    })
+    return off
+  }, [])
+
   // Auto-close the sign-in popup the moment a session exists.
   useEffect(() => {
     if (user) setAuthOpen(false)
@@ -78,6 +120,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = useCallback(async () => {
     if (!supabase) return
+    const bridge = desktop()
+    if (bridge?.isDesktop && bridge.openOAuth) {
+      // Desktop: don't sign in inside the app window (Google blocks embedded
+      // browsers). Get the provider URL, open it in the user's real browser, and
+      // let the synapz:// deep link bring the session back (handled in the effect).
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: 'synapz://auth-callback', skipBrowserRedirect: true },
+      })
+      if (error) throw error
+      if (data?.url) bridge.openOAuth(data.url)
+      return
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin },

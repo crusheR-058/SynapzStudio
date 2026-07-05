@@ -37,6 +37,38 @@ const PROD_URL = `http://localhost:${BACKEND_PORT}` // backend serves UI + api
 let win = null
 let backend = null // http.Server
 
+// --- OAuth deep link (synapz://) ----------------------------------------
+// Google sign-in must happen in the user's real default browser (Google blocks
+// embedded webviews). Supabase redirects back to `synapz://auth-callback`, which
+// the OS routes to this app; we forward it to the renderer to finish the session.
+const OAUTH_PROTOCOL = 'synapz'
+if (process.defaultApp) {
+  // Dev (`electron .`): register the scheme against the electron binary + script.
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(OAUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])])
+  }
+} else {
+  app.setAsDefaultProtocolClient(OAUTH_PROTOCOL)
+}
+
+let pendingOAuthUrl = null
+function deliverOAuth(url) {
+  if (!url || !url.startsWith(`${OAUTH_PROTOCOL}://`)) return
+  if (win) {
+    win.webContents.send('oauth-callback', url)
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  } else {
+    pendingOAuthUrl = url // consumed when the renderer mounts (cold start)
+  }
+}
+
+// macOS delivers the deep link via open-url.
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  deliverOAuth(url)
+})
+
 async function startBackend() {
   // In a packaged build, point the backend at the yt-dlp binary shipped under
   // resources/bin. In dev it falls back to the repo's ./bin (see server/index.mjs).
@@ -118,7 +150,10 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    // Windows/Linux deliver the deep link as an argv of the second launch.
+    const url = argv.find((a) => typeof a === 'string' && a.startsWith(`${OAUTH_PROTOCOL}://`))
+    if (url) deliverOAuth(url)
     if (win) {
       if (win.isMinimized()) win.restore()
       win.focus()
@@ -126,6 +161,12 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(async () => {
+    // Cold start via the deep link (Windows): the URL rides in our own argv.
+    const startupUrl = process.argv.find(
+      (a) => typeof a === 'string' && a.startsWith(`${OAUTH_PROTOCOL}://`),
+    )
+    if (startupUrl) pendingOAuthUrl = startupUrl
+
     if (DISCORD_CLIENT_ID) discord.connect(DISCORD_CLIENT_ID)
 
     // Always run the backend from the main process: in prod it serves the UI +
@@ -144,6 +185,18 @@ if (!app.requestSingleInstanceLock()) {
     })
   })
 }
+
+// --- OAuth IPC ----------------------------------------------------------
+// Renderer hands us the provider URL; we open it in the system browser.
+ipcMain.on('oauth:open-external', (_e, url) => {
+  if (typeof url === 'string' && /^https?:\/\//.test(url)) shell.openExternal(url)
+})
+// Renderer pulls any deep link that arrived before it was listening (cold start).
+ipcMain.handle('oauth:consume-pending', () => {
+  const u = pendingOAuthUrl
+  pendingOAuthUrl = null
+  return u
+})
 
 // --- Discord IPC from the renderer --------------------------------------
 ipcMain.on('discord:set', (_e, data) => discord.setPresence(data))

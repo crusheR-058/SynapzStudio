@@ -12,4 +12,14 @@ contextBridge.exposeInMainWorld('synapz', {
   clearPresence: () => ipcRenderer.send('discord:clear'),
   // For the Account-page status indicator.
   discordStatus: () => ipcRenderer.invoke('discord:status'),
+
+  // OAuth: open the provider URL in the system browser; receive the synapz://
+  // deep-link callback back from the main process.
+  openOAuth: (url) => ipcRenderer.send('oauth:open-external', url),
+  consumePendingOAuth: () => ipcRenderer.invoke('oauth:consume-pending'),
+  onOAuthCallback: (cb) => {
+    const listener = (_e, url) => cb(url)
+    ipcRenderer.on('oauth-callback', listener)
+    return () => ipcRenderer.removeListener('oauth-callback', listener)
+  },
 })

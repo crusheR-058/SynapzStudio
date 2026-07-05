@@ -1,7 +1,7 @@
 {
   "name": "synapz-music",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "description": "A Spotify-style music streaming desktop app with Discord Rich Presence.",
   "author": "crusheR-058",
@@ -47,6 +47,14 @@
     "productName": "Synapz Music",
     "asar": false,
     "afterPack": "scripts/adhoc-sign.cjs",
+    "protocols": [
+      {
+        "name": "Synapz Music",
+        "schemes": [
+          "synapz"
+        ]
+      }
+    ],
     "files": [
       "dist/**",
       "server/**",
