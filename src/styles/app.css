@@ -79,6 +79,7 @@ input {
 /* ================================================================ window */
 .window {
   position: relative;
+  z-index: 1; /* above the animated vibe canvas */
   height: 100%;
   width: 100%;
   max-width: 1480px;
@@ -96,6 +97,33 @@ input {
    maximizing on a wide screen leaves big backdrop margins on the sides. */
 .is-desktop .window {
   max-width: none;
+}
+
+/* ============================================== animated "vibe" background */
+/* Fullscreen GPU canvas behind everything. Transparent when the vibe is "off",
+   so the default look (the .wallpaper gradient) is unchanged. */
+.vibe-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  display: block;
+  pointer-events: none;
+}
+/* When a vibe is active, let it glow softly through the app. The window stays a
+   dark translucent base + blur, so text/contrast remain readable. Default (off)
+   is untouched. */
+html[data-vibe]:not([data-vibe='off']) .window {
+  background: rgba(18, 18, 20, 0.84);
+}
+/* Now-Playing is the showcase — make its backdrop translucent so the vibe reads
+   boldly behind the album art + controls. */
+html[data-vibe]:not([data-vibe='off']) .nowfs {
+  background: rgba(10, 10, 12, 0.46);
+}
+html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
+  opacity: 0.32;
 }
 .app-grid {
   display: grid;
@@ -4258,4 +4286,50 @@ input {
   background: var(--muted, #17171b);
   color: var(--foreground, #fff);
   border-color: var(--accent, #ff3b4e);
+}
+
+/* Vibe (animated background) picker — swatch grid in the Account view. */
+.vibegrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(94px, 1fr));
+  gap: 10px;
+}
+.vibecard {
+  position: relative;
+  height: 72px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.07));
+  background-color: var(--panel, #17171b);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+/* Dark scrim so the emoji + label stay legible on bright gradient swatches. */
+.vibecard:not(.vibecard--off)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.46));
+}
+.vibecard__emoji {
+  position: relative;
+  font-size: 22px;
+  line-height: 1;
+}
+.vibecard__name {
+  position: relative;
+  font-size: 12px;
+  font-weight: 600;
+}
+.vibecard:hover {
+  transform: translateY(-2px);
+}
+.vibecard.on {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.5), 0 8px 20px rgba(0, 0, 0, 0.4);
 }

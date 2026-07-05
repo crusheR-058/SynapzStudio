@@ -95,6 +95,8 @@ import {
   getDiscordStatus,
   type DiscordStatus,
 } from '../lib/discord'
+import { VibeProvider, useVibe, VIBES } from './vibe'
+import VibeBackground from './VibeBackground'
 import { PODCAST_TRACKS, podcastsByCategory } from '../lib/podcasts'
 import { stationByName } from '../lib/stations'
 import { RADIO_STATIONS } from '../lib/radio'
@@ -2547,6 +2549,44 @@ function ThemePicker() {
   )
 }
 
+// Animated background ("vibe") picker — a mood/genre WebGL backdrop. Off by default.
+function VibePicker() {
+  const { vibe, setVibe } = useVibe()
+  return (
+    <section className="section">
+      <div className="section__head">
+        <h2>Vibe background</h2>
+      </div>
+      <div className="vibegrid">
+        {VIBES.map((v) => (
+          <button
+            key={v.key}
+            className={`vibecard ${vibe.key === v.key ? 'on' : ''} ${
+              v.key === 'off' ? 'vibecard--off' : ''
+            }`}
+            onClick={() => setVibe(v.key)}
+            style={
+              v.key === 'off'
+                ? undefined
+                : {
+                    backgroundImage: `linear-gradient(135deg, ${v.colors[0]}, ${v.colors[1]} 55%, ${v.colors[2]})`,
+                  }
+            }
+            title={v.name}
+          >
+            <span className="vibecard__emoji">{v.emoji}</span>
+            <span className="vibecard__name">{v.name}</span>
+          </button>
+        ))}
+      </div>
+      <p style={{ marginTop: 10, fontSize: 13, color: 'var(--muted-foreground)' }}>
+        An animated 3D-style backdrop that matches your mood. Off by default; it uses the GPU
+        lightly and pauses when the window is hidden.
+      </p>
+    </section>
+  )
+}
+
 // Discord Rich Presence controls — desktop app only (renders nothing on web).
 // Toggles the "Listening to Synapz Music" status and surfaces the live
 // connection state reported by the Electron main process.
@@ -2845,6 +2885,8 @@ function AccountView() {
       </div>
 
       <ThemePicker />
+
+      <VibePicker />
 
       <DiscordSettings />
 
@@ -4402,6 +4444,7 @@ function Shell() {
   const isHome = view.type === 'home'
   return (
     <div className="wallpaper">
+      <VibeBackground />
       <div className="window">
         <div className={`app-grid ${isHome ? 'app-grid--home' : ''}`}>
           <Sidebar />
@@ -4431,15 +4474,17 @@ function Gate() {
   // No login wall — anyone can listen immediately. Signing in is optional and
   // happens through the AuthModal popup (rendered inside the window by Shell).
   return (
-    <PlayerProvider>
-      <PlaylistsProvider>
-        <NavProvider>
-          <UIProvider>
-            <Shell />
-          </UIProvider>
-        </NavProvider>
-      </PlaylistsProvider>
-    </PlayerProvider>
+    <VibeProvider>
+      <PlayerProvider>
+        <PlaylistsProvider>
+          <NavProvider>
+            <UIProvider>
+              <Shell />
+            </UIProvider>
+          </NavProvider>
+        </PlaylistsProvider>
+      </PlayerProvider>
+    </VibeProvider>
   )
 }
 
