@@ -91,6 +91,12 @@ input {
   box-shadow: 0 40px 120px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
 }
+/* Desktop app: the window IS the OS window, so fill it edge-to-edge (minus the
+   thin wallpaper inset) instead of capping at 1480px and centering — otherwise
+   maximizing on a wide screen leaves big backdrop margins on the sides. */
+.is-desktop .window {
+  max-width: none;
+}
 .app-grid {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr) 304px;
