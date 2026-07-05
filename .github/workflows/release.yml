@@ -49,23 +49,43 @@ jobs:
           curl -L "${{ matrix.ytdlp_url }}" -o "${{ matrix.ytdlp_out }}"
           chmod +x "${{ matrix.ytdlp_out }}" || true
 
-      - name: Build installer (no publish)
+      # Code signing is DORMANT until you add the matching repo secrets. Crucially
+      # we set CSC_LINK ONLY when a cert is actually present — an EMPTY CSC_LINK
+      # makes electron-builder try to read a cert file and fail ("not a file").
+      # With no secrets set, both platforms build UNSIGNED (current behaviour).
+      #   Windows: WIN_CSC_LINK (base64 .pfx) + WIN_CSC_KEY_PASSWORD
+      #   macOS:   MAC_CSC_LINK (base64 Developer-ID .p12) + MAC_CSC_KEY_PASSWORD
+      #   macOS notarize: APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID
+      - name: Configure code signing
         shell: bash
         env:
-          # Code signing — DORMANT until you add the matching repo secrets. The
-          # OS-specific ternaries are empty-guarded, so with no secrets set both
-          # platforms build UNSIGNED (current behaviour). See README for setup.
-          #   Windows: WIN_CSC_LINK (base64 .pfx) + WIN_CSC_KEY_PASSWORD
-          #   macOS:   MAC_CSC_LINK (base64 Developer-ID .p12) + MAC_CSC_KEY_PASSWORD
-          #   macOS notarize: APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID
-          CSC_LINK: ${{ (matrix.os == 'windows-latest' && secrets.WIN_CSC_LINK) || (matrix.os == 'macos-latest' && secrets.MAC_CSC_LINK) || '' }}
-          CSC_KEY_PASSWORD: ${{ (matrix.os == 'windows-latest' && secrets.WIN_CSC_KEY_PASSWORD) || (matrix.os == 'macos-latest' && secrets.MAC_CSC_KEY_PASSWORD) || '' }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Only let macOS try to auto-sign when a cert is actually provided;
-          # otherwise force unsigned so the CI runner doesn't fail hunting for one.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (matrix.os == 'macos-latest' && secrets.MAC_CSC_LINK != '') && 'true' || 'false' }}
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ] && [ -n "$WIN_CSC_LINK" ]; then
+            echo "CSC_LINK=$WIN_CSC_LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$WIN_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "signing: windows (cert provided)"
+          elif [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "$MAC_CSC_LINK" ]; then
+            echo "CSC_LINK=$MAC_CSC_LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            [ -n "$APPLE_ID" ] && echo "APPLE_ID=$APPLE_ID" >> "$GITHUB_ENV"
+            [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_SPECIFIC_PASSWORD" >> "$GITHUB_ENV"
+            [ -n "$APPLE_TEAM_ID" ] && echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+            echo "signing: macos (cert provided)"
+          else
+            # No cert for this OS — force unsigned so macOS doesn't hunt for an identity.
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "signing: none (unsigned build)"
+          fi
+
+      - name: Build installer (no publish)
+        shell: bash
         run: |
           npm run icons
           npm run build
