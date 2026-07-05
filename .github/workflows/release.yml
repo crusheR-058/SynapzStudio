@@ -91,6 +91,10 @@ jobs:
           # (Supabase). Both are public-safe (anon key is protected by RLS).
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Enables the fast YouTube Data API search path (falls back to yt-dlp).
+          # The key is HTTP-referrer-restricted, so it only works from allowed
+          # origins — add http://localhost:8787/* to the key's referrers.
+          VITE_YOUTUBE_API_KEY: ${{ vars.VITE_YOUTUBE_API_KEY }}
         run: |
           npm run icons
           npm run build

@@ -98,7 +98,7 @@ app.get('/api/spotify/playlist', async (req, res) => {
 app.get('/yt/search', async (req, res) => {
   const q = String(req.query.q || '').trim()
   if (!q) return res.json([])
-  const n = Math.min(50, Math.max(1, parseInt(String(req.query.n || '40'), 10) || 40))
+  const n = Math.min(50, Math.max(1, parseInt(String(req.query.n || '20'), 10) || 20))
   try {
     const out = await run([
       '--flat-playlist',

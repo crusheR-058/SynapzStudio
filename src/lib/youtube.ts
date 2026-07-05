@@ -189,7 +189,8 @@ export async function searchYouTubeLocal(query: string, opts: SearchOpts = {}): 
   if (!query.trim()) return []
   const minSec = opts.minSec ?? 1
   const maxSec = opts.maxSec ?? 60 * 15
-  const res = await fetch(`/yt/search?q=${encodeURIComponent(query)}`)
+  // Fewer results = fewer YouTube search pages = a faster yt-dlp call.
+  const res = await fetch(`/yt/search?q=${encodeURIComponent(query)}&n=20`)
   if (!res.ok) throw new YtError('HTTP', `yt helper ${res.status}`)
   const items = await res.json()
   if (items?.error) throw new YtError('HTTP', items.error)
@@ -253,24 +254,25 @@ const inflight = new Map<string, Promise<Track[]>>()
 
 async function runSearch(query: string, opts: SearchOpts): Promise<Track[]> {
   const isProd = !!(import.meta as any).env?.PROD
-  // The Electron desktop app bundles the backend, so the keyless /yt helper is
-  // available there too (same-origin on localhost) even in a "prod" build —
-  // prefer it so YouTube/Bollywood search works with no API key.
+  // The Electron desktop app bundles the backend, so the keyless /yt (yt-dlp)
+  // helper is available there too (same-origin on localhost).
   const isDesktop = typeof window !== 'undefined' && !!(window as any).synapz?.isDesktop
-  if (isProd && !isDesktop) {
-    // Hosted web (Vercel): the /yt helper 404s, so use the Data API directly and
-    // surface NO_KEY (which the UI turns into "Connect YouTube") instead of
-    // masking it with a broken fallback.
-    if (!hasYtKey()) throw new YtError('NO_KEY')
-    return await searchYouTube(query, 50, opts)
+  const hasHelper = !isProd || isDesktop // /yt/search exists in dev + desktop
+
+  // FAST path: one Data-API request (~0.3s) instead of spawning yt-dlp (which in
+  // the packaged app is several seconds — the single-file exe re-extracts itself
+  // every call). Prefer it whenever a key is configured; only fall back to the
+  // yt-dlp helper if the API errors (quota / referrer-restriction / offline).
+  if (hasYtKey()) {
+    try {
+      return await searchYouTube(query, 50, opts)
+    } catch (e) {
+      if (!hasHelper) throw e // hosted web has no helper — surface the error
+      // else fall through to the yt-dlp helper below
+    }
   }
-  // Dev or desktop: prefer the keyless yt-dlp helper; fall back to the Data API if a key exists.
-  try {
-    return await searchYouTubeLocal(query, opts)
-  } catch (e) {
-    if (hasYtKey()) return await searchYouTube(query, 50, opts)
-    throw e
-  }
+  if (!hasHelper) throw new YtError('NO_KEY')
+  return await searchYouTubeLocal(query, opts)
 }
 
 /**
