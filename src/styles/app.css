@@ -772,6 +772,10 @@ input {
   padding: 8px 14px;
   border-radius: 10px;
   transition: background 0.15s;
+  /* Long lists (Bollywood is 700+ rows): let the browser skip layout/paint for
+     rows that aren't near the viewport, so opening + scrolling stays smooth. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
 }
 .trow:hover {
   background: var(--panel);

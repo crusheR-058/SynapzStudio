@@ -1,5 +1,6 @@
 import {
   createContext,
+  memo,
   useContext,
   useEffect,
   useMemo,
@@ -784,7 +785,7 @@ function Section({
 
 /* --------------------------------------------------- track list (details) */
 
-function TrackRow({
+const TrackRow = memo(function TrackRow({
   track,
   index,
   context,
@@ -868,7 +869,9 @@ function TrackRow({
       <div className="trow__time">{fmtTime(track.duration)}</div>
     </div>
   )
-}
+})
+
+const TLIST_PAGE = 60
 
 function TrackList({
   tracks,
@@ -880,6 +883,31 @@ function TrackList({
   onRemove?: (track: Track, index: number) => void
 }) {
   const ctx = context ?? tracks
+  // Render incrementally: some baked lists are 700+ rows, and mounting them all
+  // at once makes opening the view slow and janky. Show a page, then load more
+  // as the sentinel scrolls into view.
+  const [shown, setShown] = useState(() => Math.min(tracks.length, TLIST_PAGE))
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // Reset the window whenever the list itself changes (new lane / view).
+  useEffect(() => setShown(Math.min(tracks.length, TLIST_PAGE)), [tracks])
+
+  useEffect(() => {
+    if (shown >= tracks.length) return
+    const el = sentinelRef.current
+    if (!el) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShown((s) => Math.min(tracks.length, s + TLIST_PAGE))
+        }
+      },
+      { rootMargin: '800px 0px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [shown, tracks.length])
+
   return (
     <div className="tlist">
       <div className="tlist__head">
@@ -891,7 +919,7 @@ function TrackList({
           <Clock3 size={15} />
         </div>
       </div>
-      {tracks.map((t, i) => (
+      {tracks.slice(0, shown).map((t, i) => (
         <TrackRow
           key={`${t.id}-${i}`}
           track={t}
@@ -900,6 +928,7 @@ function TrackList({
           onRemove={onRemove ? () => onRemove(t, i) : undefined}
         />
       ))}
+      {shown < tracks.length && <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />}
     </div>
   )
 }
