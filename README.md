@@ -126,19 +126,38 @@ at this repo's [latest GitHub Release](https://github.com/crusheR-058/SynapzStud
 To populate it, push a version tag and let CI build + attach both installers:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on
-`windows-latest` + `macos-latest`, downloads the correct `yt-dlp` per OS, builds
-the `.exe` and `.dmg`, and uploads them to the Release (via `GITHUB_TOKEN` — no
-secrets to configure). Anyone can then click the link and download for their OS.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds on
+`windows-latest` + `macos-latest` (downloading the correct `yt-dlp` per OS), then
+a single `publish` job uploads everything to **one** GitHub Release via
+`GITHUB_TOKEN` — no secrets to configure. Three installers are produced:
 
-> Builds are **unsigned**, so first launch shows Windows SmartScreen ("More info →
-> Run anyway") or macOS Gatekeeper ("right-click → Open"). Add a code-signing
-> certificate (`CSC_LINK`/`CSC_KEY_PASSWORD` for Windows, an Apple Developer cert
-> for macOS) to remove those prompts.
+- **Windows:** `Synapz-Music-Setup-<v>.exe`
+- **macOS Apple Silicon:** `Synapz-Music-<v>-arm64.dmg`
+- **macOS Intel:** `Synapz-Music-<v>-x64.dmg`
+
+> Publishing from each matrix job in parallel races and splits assets across
+> duplicate draft releases — that's why building and publishing are separate jobs.
+
+### Code signing (optional — removes the "unverified app" warnings)
+
+Builds are **unsigned** by default, so first launch shows Windows SmartScreen
+("More info → Run anyway") or macOS Gatekeeper ("right-click → Open"). Signing is
+already wired into the release workflow — it stays off until you add the matching
+repo secrets (Settings → Secrets and variables → Actions), then activates
+automatically on the next release:
+
+| Platform | Secrets | How to get them |
+| --- | --- | --- |
+| Windows | `WIN_CSC_LINK` (base64 of your `.pfx`), `WIN_CSC_KEY_PASSWORD` | An **OV/EV code-signing certificate** from a CA (DigiCert, Sectigo, …). Note: only an EV cert clears SmartScreen instantly; OV needs to build reputation. |
+| macOS sign | `MAC_CSC_LINK` (base64 of a **Developer ID Application** `.p12`), `MAC_CSC_KEY_PASSWORD` | An **Apple Developer account** ($99/yr) → export the cert from Keychain. |
+| macOS notarize | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Same Apple account; create an app-specific password at appleid.apple.com. |
+
+Base64-encode a cert with `base64 -w0 cert.pfx` (Linux) or
+`base64 -i cert.pfx` (macOS), and paste the output as the secret value.
 
 ## Accounts, login & Premium
 

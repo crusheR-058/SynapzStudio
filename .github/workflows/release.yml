@@ -22,9 +22,12 @@ jobs:
       matrix:
         include:
           - os: windows-latest
+            eb_args: --win
             ytdlp_url: https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe
             ytdlp_out: bin/yt-dlp.exe
           - os: macos-latest
+            # Build BOTH Apple Silicon (arm64) and Intel (x64) .dmgs.
+            eb_args: --mac --arm64 --x64
             ytdlp_url: https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos
             ytdlp_out: bin/yt-dlp
     runs-on: ${{ matrix.os }}
@@ -49,12 +52,24 @@ jobs:
       - name: Build installer (no publish)
         shell: bash
         env:
-          # No Apple Developer cert in CI — build an unsigned .dmg instead of failing.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Code signing — DORMANT until you add the matching repo secrets. The
+          # OS-specific ternaries are empty-guarded, so with no secrets set both
+          # platforms build UNSIGNED (current behaviour). See README for setup.
+          #   Windows: WIN_CSC_LINK (base64 .pfx) + WIN_CSC_KEY_PASSWORD
+          #   macOS:   MAC_CSC_LINK (base64 Developer-ID .p12) + MAC_CSC_KEY_PASSWORD
+          #   macOS notarize: APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID
+          CSC_LINK: ${{ (matrix.os == 'windows-latest' && secrets.WIN_CSC_LINK) || (matrix.os == 'macos-latest' && secrets.MAC_CSC_LINK) || '' }}
+          CSC_KEY_PASSWORD: ${{ (matrix.os == 'windows-latest' && secrets.WIN_CSC_KEY_PASSWORD) || (matrix.os == 'macos-latest' && secrets.MAC_CSC_KEY_PASSWORD) || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Only let macOS try to auto-sign when a cert is actually provided;
+          # otherwise force unsigned so the CI runner doesn't fail hunting for one.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (matrix.os == 'macos-latest' && secrets.MAC_CSC_LINK != '') && 'true' || 'false' }}
         run: |
           npm run icons
           npm run build
-          npx electron-builder --publish never
+          npx electron-builder ${{ matrix.eb_args }} --publish never
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
