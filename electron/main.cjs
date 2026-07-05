@@ -81,6 +81,15 @@ function createWindow() {
     },
   })
 
+  // Google's OAuth refuses "insecure" user agents — anything advertising
+  // "Electron" gets "this browser or app may not be secure", which would break
+  // Supabase → Google sign-in. Present a plain Chrome UA instead.
+  const appToken = new RegExp(
+    ` (?:Electron|${app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\/[\\d.]+`,
+    'gi',
+  )
+  win.webContents.setUserAgent(win.webContents.getUserAgent().replace(appToken, ''))
+
   // Open real external links (Spotify, GitHub, …) in the system browser rather
   // than a bare Electron window.
   win.webContents.setWindowOpenHandler(({ url }) => {

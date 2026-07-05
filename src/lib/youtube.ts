@@ -253,14 +253,18 @@ const inflight = new Map<string, Promise<Track[]>>()
 
 async function runSearch(query: string, opts: SearchOpts): Promise<Track[]> {
   const isProd = !!(import.meta as any).env?.PROD
-  if (isProd) {
-    // The keyless /yt helper only exists behind the local dev proxy, so on Vercel
-    // it 404s. Use the Data API directly and surface NO_KEY (which the UI turns
-    // into "Connect YouTube") instead of masking it with a broken fallback.
+  // The Electron desktop app bundles the backend, so the keyless /yt helper is
+  // available there too (same-origin on localhost) even in a "prod" build —
+  // prefer it so YouTube/Bollywood search works with no API key.
+  const isDesktop = typeof window !== 'undefined' && !!(window as any).synapz?.isDesktop
+  if (isProd && !isDesktop) {
+    // Hosted web (Vercel): the /yt helper 404s, so use the Data API directly and
+    // surface NO_KEY (which the UI turns into "Connect YouTube") instead of
+    // masking it with a broken fallback.
     if (!hasYtKey()) throw new YtError('NO_KEY')
     return await searchYouTube(query, 50, opts)
   }
-  // Dev: prefer the keyless yt-dlp helper; fall back to the Data API if a key exists.
+  // Dev or desktop: prefer the keyless yt-dlp helper; fall back to the Data API if a key exists.
   try {
     return await searchYouTubeLocal(query, opts)
   } catch (e) {

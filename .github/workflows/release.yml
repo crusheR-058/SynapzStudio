@@ -86,6 +86,11 @@ jobs:
 
       - name: Build installer (no publish)
         shell: bash
+        env:
+          # Baked into the client bundle so the packaged app has cloud sign-in
+          # (Supabase). Both are public-safe (anon key is protected by RLS).
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
         run: |
           npm run icons
           npm run build
