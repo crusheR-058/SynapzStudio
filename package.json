@@ -1,7 +1,7 @@
 {
   "name": "synapz-music",
   "private": true,
-  "version": "1.0.8",
+  "version": "1.1.0",
   "type": "module",
   "description": "A Spotify-style music streaming desktop app with Discord Rich Presence.",
   "author": "crusheR-058",
@@ -19,9 +19,21 @@
     "dist:win": "npm run icons && vite build && electron-builder --win",
     "dist:mac": "npm run icons && vite build && electron-builder --mac",
     "deploy": "vercel --prod",
-    "deploy:watch": "node scripts/deploy-watch.mjs"
+    "deploy:watch": "node scripts/deploy-watch.mjs",
+    "build:mobile": "vite build --mode mobile",
+    "assets:mobile": "npm run icons && node scripts/make-mobile-assets.mjs && capacitor-assets generate",
+    "cap:sync": "npm run build:mobile && cap sync",
+    "mobile:android": "npm run build:mobile && cap sync android && cap open android",
+    "mobile:ios": "npm run build:mobile && cap sync ios && cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/browser": "^6.0.6",
+    "@capacitor/core": "^6.2.1",
+    "@capacitor/ios": "^6.2.1",
+    "@capacitor/splash-screen": "^6.0.4",
+    "@capacitor/status-bar": "^6.0.3",
     "@supabase/supabase-js": "^2.108.2",
     "@vercel/analytics": "^2.0.1",
     "@xhayper/discord-rpc": "^1.3.4",
@@ -31,6 +43,8 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

@@ -99,6 +99,25 @@ input {
   max-width: none;
 }
 
+/* Mobile app (Capacitor): the app fills the phone screen (no floating card), and
+   content honors the notch / status bar / home-indicator safe areas. */
+.is-native .wallpaper {
+  padding: 0;
+}
+.is-native .window {
+  max-width: none;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+.is-native .center,
+.is-native .sidebar {
+  padding-top: env(safe-area-inset-top);
+}
+.is-native .mnav {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
 /* ============================================== animated "vibe" background */
 /* Fullscreen GPU canvas behind everything. Transparent when the vibe is "off",
    so the default look (the .wallpaper gradient) is unchanged. */

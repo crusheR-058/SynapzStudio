@@ -1,6 +1,7 @@
 import type { Track } from './types'
 import { searchYT } from './youtube'
 import { searchTracks } from './audius'
+import { apiUrl } from './apiBase'
 
 export interface SpotifyTrackRef {
   title: string
@@ -30,7 +31,7 @@ export const isSpotifyUrl = (s: string): boolean => !!parseSpotifyUrl(s)
 
 /** Ask our server to read the playlist's track list (titles + artists). */
 export async function fetchSpotifyImport(url: string): Promise<SpotifyImport> {
-  const res = await fetch(`/api/spotify/playlist?url=${encodeURIComponent(url)}`)
+  const res = await fetch(apiUrl(`/api/spotify/playlist?url=${encodeURIComponent(url)}`))
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || `Import failed (${res.status})`)
