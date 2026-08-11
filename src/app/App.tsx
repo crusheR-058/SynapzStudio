@@ -3293,23 +3293,6 @@ function Sidebar() {
       </nav>
 
       <div className="menu-label">
-        <span>Library</span>
-        <span className="menu-label__n">3</span>
-        <MoreHorizontal size={15} />
-      </div>
-      <nav className="nav">
-        <NavItem
-          icon={Disc3}
-          label="Albums"
-          dot
-          active={section === 'albums'}
-          onClick={() => { setQuery(''); navigate({ type: 'search' }, 'albums') }}
-        />
-        <NavItem icon={Music2} label="Song" active={section === 'song'} onClick={() => navigate({ type: 'library' }, 'song')} />
-        <NavItem icon={Users} label="Artists" active={section === 'artists'} onClick={() => { setQuery(''); navigate({ type: 'search' }, 'artists') }} />
-      </nav>
-
-      <div className="menu-label">
         <span>Playlists</span>
         <button
           className="menu-label__add"
