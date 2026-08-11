@@ -2713,7 +2713,7 @@ function VibePicker() {
               v.key === 'off'
                 ? undefined
                 : {
-                    backgroundImage: `linear-gradient(135deg, ${v.colors[0]}, ${v.colors[1]} 55%, ${v.colors[2]})`,
+                    backgroundImage: `linear-gradient(135deg, ${v.colors[0]}, ${v.colors[1]} 38%, ${v.colors[2]} 70%, ${v.colors[3]})`,
                   }
             }
             title={v.name}

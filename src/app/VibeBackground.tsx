@@ -28,6 +28,7 @@ uniform float uMode;
 uniform vec3 uColorA;
 uniform vec3 uColorB;
 uniform vec3 uColorC;
+uniform vec3 uColorD;
 
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p){
@@ -64,6 +65,10 @@ void main(){
 
   vec3 col = mix(uColorA, uColorB, clamp(pattern, 0.0, 1.0));
   col = mix(col, uColorC, clamp(r.x*r.y*1.6, 0.0, 1.0));
+  // Accent rides the FIRST warp (q) rather than the second (r) that placed the
+  // highlight, so the two pool in different regions instead of stacking into one
+  // wash. Squared + offset so it stays a rarer bloom, not a fourth flat layer.
+  col = mix(col, uColorD, clamp((q.y*q.y - 0.12) * 2.2, 0.0, 0.85));
 
   // Vignette keeps edges darker so UI stays readable; gentle global breathing.
   float vig = smoothstep(1.3, 0.2, length(uv - 0.5) * 1.4);
@@ -138,6 +143,7 @@ export default function VibeBackground() {
       a: gl.getUniformLocation(prog, 'uColorA'),
       b: gl.getUniformLocation(prog, 'uColorB'),
       c: gl.getUniformLocation(prog, 'uColorC'),
+      d: gl.getUniformLocation(prog, 'uColorD'),
     }
 
     // Downscale the render buffer — the background is soft, so ~0.6× DPR is
@@ -189,7 +195,7 @@ export default function VibeBackground() {
       return
     }
 
-    const [ca, cb, cc] = [hexToRGB(vibe.colors[0]), hexToRGB(vibe.colors[1]), hexToRGB(vibe.colors[2])]
+    const [ca, cb, cc, cd] = vibe.colors.map(hexToRGB)
     const reduce = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     const start = performance.now()
     let raf = 0
@@ -204,6 +210,7 @@ export default function VibeBackground() {
       gl.uniform3fv(U.a, ca)
       gl.uniform3fv(U.b, cb)
       gl.uniform3fv(U.c, cc)
+      gl.uniform3fv(U.d, cd)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
     }
 
