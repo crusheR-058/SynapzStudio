@@ -1,7 +1,7 @@
 {
   "name": "synapz-music",
   "private": true,
-  "version": "1.3.7",
+  "version": "1.3.8",
   "type": "module",
   "description": "A Spotify-style music streaming desktop app with Discord Rich Presence.",
   "author": "crusheR-058",
