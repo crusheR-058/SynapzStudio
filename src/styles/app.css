@@ -4564,7 +4564,6 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   width: 96px;
   height: 96px;
   border-radius: 50%;
-  object-fit: cover;
   margin-bottom: 8px;
 }
 .artistcard b {
@@ -4583,9 +4582,9 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   color: var(--muted-foreground);
 }
 
+/* .cover already clips and object-fits its img; only the shape changes here. */
 .phead__cover--artist {
   border-radius: 50%;
-  object-fit: cover;
 }
 
 /* Spotify import — name-and-save block */

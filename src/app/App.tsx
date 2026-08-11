@@ -487,23 +487,45 @@ function UIProvider({ children }: { children: ReactNode }) {
 
 function Cover({
   src,
+  fallbackSrc,
   alt,
   className,
 }: {
   src?: string
+  /**
+   * Tried when `src` fails to load, before giving up to the placeholder.
+   * This exists for YouTube art: maxresdefault is the one worth showing but is
+   * missing for roughly one video in twelve, while hqdefault always exists. A
+   * plain `a || b` cannot express that — the URL is non-empty either way, so the
+   * fallback would never fire; only a load error reveals which.
+   */
+  fallbackSrc?: string
   alt: string
   className?: string
 }) {
   const [failed, setFailed] = useState(false)
+  const [degraded, setDegraded] = useState(false)
   // Reset when the artwork changes — persistent Cover instances (player bar,
   // mini player, fullscreen art) are reused across tracks, so without this one
   // broken image would show the placeholder for every later track too.
-  useEffect(() => setFailed(false), [src])
-  const show = src && !failed
+  useEffect(() => {
+    setFailed(false)
+    setDegraded(false)
+  }, [src, fallbackSrc])
+  const current = degraded ? fallbackSrc : src || fallbackSrc
+  const show = current && !failed
   return (
     <div className={`cover ${className ?? ''}`}>
       {show ? (
-        <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+        <img
+          src={current}
+          alt={alt}
+          loading="lazy"
+          onError={() => {
+            if (!degraded && fallbackSrc && fallbackSrc !== src) setDegraded(true)
+            else setFailed(true)
+          }}
+        />
       ) : (
         <div className="cover__fallback" aria-hidden>
           <ListMusic size={'38%'} />
@@ -964,7 +986,7 @@ function HomeNowPlaying() {
         disabled={!t}
         aria-label="Open full player"
       >
-        <Cover src={t?.artworkLarge || t?.artwork} alt={t?.title || ''} />
+        <Cover src={t?.artworkLarge} fallbackSrc={t?.artwork} alt={t?.title || ''} />
       </button>
       <div className="hmnow__meta">
         <span className="hmnow__title" title={t?.title}>
@@ -1079,7 +1101,7 @@ function HomeView() {
             <section className="hmhero">
               <div
                 className="hmhero__img"
-                style={{ backgroundImage: `url(${hero.artworkLarge || hero.artwork})` }}
+                style={{ backgroundImage: `url(${hero.artworkLarge}), url(${hero.artwork})` }}
                 aria-hidden
               />
               <div className="hmhero__veil" />
@@ -1910,10 +1932,17 @@ function ArtistsView() {
     })).filter((s) => s.artists.length)
   }, [data, q])
 
-  // Artwork for a card = the artist's first track thumbnail. Cheap, always
-  // present, and avoids shipping a separate image set for 190 people.
-  const coverFor = (name: string) =>
-    data?.INDIAN_TRACKS.find((t) => t.artistTag === name)?.artwork || ''
+  // Artwork for a card = the artist's first track thumbnail, so no separate
+  // image set is needed for 185 people.
+  //
+  // Built once into a map rather than searched per card: a .find() over 7,336
+  // tracks, run for each of 185 cards, is ~1.4M comparisons — and it re-ran on
+  // every render, so every keystroke in the filter below paid it.
+  const covers = useMemo(() => {
+    const m = new Map<string, string>()
+    if (data) for (const t of data.INDIAN_TRACKS) if (!m.has(t.artistTag)) m.set(t.artistTag, t.artwork)
+    return m
+  }, [data])
 
   if (error) return <ErrorState message={error} />
   if (!data) return <Loading label="Loading the catalogue" />
@@ -1969,7 +1998,7 @@ function ArtistsView() {
                   className="artistcard"
                   onClick={() => navigate({ type: 'artist', name: a.name }, 'artists')}
                 >
-                  <Cover src={coverFor(a.name)} alt={a.name} className="artistcard__art" />
+                  <Cover src={covers.get(a.name)} alt={a.name} className="artistcard__art" />
                   <b>{a.name}</b>
                   <i>{a.count} songs</i>
                 </button>
@@ -3969,7 +3998,7 @@ function NowPlaying() {
     <div className="nowfs">
       <div
         className="nowfs__bg"
-        style={{ backgroundImage: t ? `url(${t.artworkLarge || t.artwork})` : undefined }}
+        style={{ backgroundImage: t ? `url(${t.artworkLarge}), url(${t.artwork})` : undefined }}
       />
       <div className="nowfs__top">
         <span className="nowfs__src">Now playing</span>
@@ -3980,7 +4009,8 @@ function NowPlaying() {
       <div className="nowfs__body">
         <div className="nowfs__left">
           <Cover
-            src={t?.artworkLarge || t?.artwork || ''}
+            src={t?.artworkLarge}
+            fallbackSrc={t?.artwork}
             alt={t?.title || ''}
             className="nowfs__art"
           />
