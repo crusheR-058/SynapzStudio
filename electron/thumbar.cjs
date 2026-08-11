@@ -45,7 +45,11 @@ function send(win, action) {
 // accepts ThumbBarAddButtons once, and every later update has to keep the same
 // layout. So we always ship three and vary icon/tooltip/flags instead.
 function buttons(win) {
-  const flags = state.hasTrack ? ['enabled'] : ['disabled']
+  // An EMPTY array means enabled. Passing ['enabled'] does not: it isn't a flag
+  // Electron's converter recognises, and an unrecognised flag makes it reject
+  // the whole setThumbarButtons call -- so the buttons stayed frozen in
+  // whatever state they were first registered with, ignoring every update.
+  const flags = state.hasTrack ? [] : ['disabled']
   const toggle = state.isPlaying
     ? { tooltip: 'Pause', icon: icon('pause') }
     : { tooltip: 'Play', icon: icon('play') }
