@@ -1406,6 +1406,47 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   animation: fade 0.2s ease;
 }
 
+/* Update offer — same slab as .toast, but it carries actions, so it lays out
+   as a row and sits above the player bar rather than over it. */
+.toast--update {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 20px;
+  bottom: 120px;
+}
+.toast__cta {
+  flex: 0 0 auto;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.toast__cta:hover {
+  filter: brightness(1.08);
+}
+.toast__x {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.toast__x:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
 /* =================================================== youtube / hindi ui */
 .phead__actions {
   display: flex;

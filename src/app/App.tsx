@@ -102,6 +102,7 @@ import { stationByName } from '../lib/stations'
 import { RADIO_STATIONS } from '../lib/radio'
 import { cloudAddToPlaylist, cloudFetchHistory, cloudFetchPublicPlaylist } from '../lib/cloud'
 import { watchPlayerRect } from '../lib/taskbar'
+import { restartToUpdate, watchUpdates, type UpdateStatus } from '../lib/updater'
 
 /* ------------------------------------------------------------------ utils */
 
@@ -4442,6 +4443,34 @@ function MobileNav() {
   )
 }
 
+/* --------------------------------------------------------------- updates */
+
+// Desktop only. The update installs on quit regardless, so this is an offer to
+// skip the wait rather than a demand — it stays quiet until a version is
+// actually downloaded and ready, and can be dismissed.
+function UpdateNotice() {
+  const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' })
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => watchUpdates(setStatus), [])
+  useEffect(() => setDismissed(false), [status.version])
+
+  if (status.state !== 'ready' || dismissed) return null
+  return (
+    <div className="toast toast--update">
+      <span>
+        Version {status.version} is ready — it installs when you close Synapz.
+      </span>
+      <button className="toast__cta" onClick={restartToUpdate}>
+        Restart now
+      </button>
+      <button className="toast__x" onClick={() => setDismissed(true)} aria-label="Dismiss">
+        <X size={15} />
+      </button>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ shell */
 
 function Shell() {
@@ -4464,6 +4493,7 @@ function Shell() {
         <AuthModal />
       </div>
       {error && <div className="toast">{error}</div>}
+      <UpdateNotice />
     </div>
   )
 }

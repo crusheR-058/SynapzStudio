@@ -13,6 +13,15 @@ contextBridge.exposeInMainWorld('synapz', {
   // For the Account-page status indicator.
   discordStatus: () => ipcRenderer.invoke('discord:status'),
 
+  // Auto-update: current state, live transitions, and "install it now".
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  restartToUpdate: () => ipcRenderer.send('update:restart'),
+  onUpdateStatus: (cb) => {
+    const listener = (_e, status) => cb(status)
+    ipcRenderer.on('update:status', listener)
+    return () => ipcRenderer.removeListener('update:status', listener)
+  },
+
   // Windows taskbar mini-player: mirror now-playing + the player bar's bounds
   // up to the main process, and take transport clicks back down from it.
   setNowPlaying: (state) => ipcRenderer.send('media:state', state),
