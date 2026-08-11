@@ -2,21 +2,58 @@ name: Release desktop app
 
 # Cut a release by pushing a version tag, e.g.:
 #   git tag v1.0.0 && git push origin v1.0.0
-# The matrix jobs BUILD the Windows (.exe) and macOS (.dmg) installers and upload
-# them as artifacts; a single `publish` job then creates ONE GitHub Release with
-# both. (Publishing from each matrix job in parallel races and splits the assets
-# across duplicate draft releases — so we don't do that.) You can also run it
-# manually from the Actions tab.
+# You can also run it manually from the Actions tab.
+#
+# Shape: `draft` opens ONE draft release, the matrix jobs build the Windows
+# (.exe) and macOS (.dmg) installers and upload straight into it, and `publish`
+# flips it visible once every build has landed. Opening the release up front is
+# what stops the parallel matrix jobs from racing to create it and splitting the
+# assets across duplicate drafts.
+#
+# Installers deliberately do NOT go through actions/upload-artifact. A release
+# is ~440MB of installers across the two runners, and artifact storage on the
+# free tier is 500MB — so the round-trip filled the quota and then failed EVERY
+# subsequent release at the upload step, long after the builds themselves had
+# succeeded. Uploading to the release directly has no such cap.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write # let the publish job create the GitHub Release
+  contents: write # let the jobs create and populate the GitHub Release
 
 jobs:
+  # Open the release as a draft so users never see a half-populated one, and so
+  # the build jobs have a single target to upload into.
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "release $TAG already exists — reusing it"
+            exit 0
+          fi
+          gh release create "$TAG" --repo "$REPO" --draft \
+            --title "Synapz Music $TAG" \
+            --notes "Synapz Music desktop app $TAG.
+
+          **Downloads**
+          - **Windows:** \`Synapz-Music-Setup-*.exe\`
+          - **macOS — Apple Silicon (M1/M2/M3):** \`Synapz-Music-*-arm64.dmg\`
+          - **macOS — Intel:** \`Synapz-Music-*-x64.dmg\`
+
+          **Opening it (builds are unsigned):**
+          - **Windows:** SmartScreen → *More info* → *Run anyway*.
+          - **macOS:** the app is ad-hoc signed, so **right-click the app → Open → Open**. If macOS still says it's \"damaged\", open Terminal and run \`xattr -cr \"/Applications/Synapz Music.app\"\`, then open it."
+
   build:
+    needs: draft
     strategy:
       fail-fast: false
       matrix:
@@ -100,42 +137,39 @@ jobs:
           npm run build
           npx electron-builder ${{ matrix.eb_args }} --publish never
 
-      - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: installers-${{ matrix.os }}
-          path: |
-            release/*.exe
-            release/*.dmg
-            release/*.yml
-            release/*.blockmap
-          if-no-files-found: error
+      # Straight into the draft release — no artifact round-trip. latest.yml /
+      # latest-mac.yml matter as much as the installers: they're the manifest
+      # electron-updater reads to decide an update exists, so a release missing
+      # them is invisible to every already-installed copy of the app.
+      - name: Upload installers to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          shopt -s nullglob
+          files=()
+          for f in release/*.exe release/*.dmg release/*.yml release/*.blockmap; do
+            # builder-debug.yml is electron-builder's own scratch output.
+            [ "$(basename "$f")" = "builder-debug.yml" ] && continue
+            files+=("$f")
+          done
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no installers were produced"
+            exit 1
+          fi
+          printf 'uploading %s\n' "${files[@]}"
+          gh release upload "$TAG" "${files[@]}" --repo "$REPO" --clobber
 
+  # Every installer is in place — make the release visible.
   publish:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download all installers
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --repo "${{ github.repository }}" \
-            --title "Synapz Music ${{ github.ref_name }}" \
-            --notes "Synapz Music desktop app ${{ github.ref_name }}.
-
-          **Downloads**
-          - **Windows:** \`Synapz-Music-Setup-*.exe\`
-          - **macOS — Apple Silicon (M1/M2/M3):** \`Synapz-Music-*-arm64.dmg\`
-          - **macOS — Intel:** \`Synapz-Music-*-x64.dmg\`
-
-          **Opening it (builds are unsigned):**
-          - **Windows:** SmartScreen → *More info* → *Run anyway*.
-          - **macOS:** the app is ad-hoc signed, so **right-click the app → Open → Open**. If macOS still says it's \"damaged\", open Terminal and run \`xattr -cr \"/Applications/Synapz Music.app\"\`, then open it." \
-            artifacts/*
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: gh release edit "$TAG" --repo "$REPO" --draft=false
