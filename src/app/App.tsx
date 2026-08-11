@@ -721,11 +721,6 @@ function TrackCard({ track, context }: { track: Track; context: Track[] }) {
     >
       <div className="card__art">
         <Cover src={track.artwork} alt={track.title} />
-        {track.source === 'youtube' && (
-          <span className="card__src">
-            <Youtube size={13} />
-          </span>
-        )}
         <button
           className={`card__play ${isCurrent && isPlaying ? 'is-current' : ''}`}
           onClick={(e) => {

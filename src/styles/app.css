@@ -1473,20 +1473,6 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
 }
 
 /* source badges */
-.card__src {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  color: #fff;
-  background: rgba(255, 0, 51, 0.92);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
 /* "connect youtube" banner */
 .yt-connect {
   display: flex;
