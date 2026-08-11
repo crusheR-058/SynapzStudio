@@ -6,6 +6,7 @@
 // and must never disrupt playback.
 
 import type { Track } from './types'
+import { roomUrl } from './listen'
 
 interface SynapzBridge {
   isDesktop?: boolean
@@ -21,6 +22,8 @@ interface PresencePayload {
   durationSec: number
   positionSec: number
   isPlaying: boolean
+  /** Live Listen Along room, if hosting — becomes a join button on the profile. */
+  listenUrl?: string
 }
 
 export interface DiscordStatus {
@@ -66,10 +69,27 @@ export async function getDiscordStatus(): Promise<DiscordStatus | null> {
   }
 }
 
+// The room this user is currently hosting, if any. Kept module-level rather
+// than threaded through every pushPresence() call site: presence is pushed from
+// several places (track change, play/pause, seek) that have no idea a Listen
+// Along session exists, and all of them must carry the join button once it does.
+let listenRoomCode: string | null = null
+
+/** Set (or clear, with null) the room advertised on the Discord profile. */
+export function setListenRoom(code: string | null): void {
+  listenRoomCode = code
+  // Re-push so the button appears/disappears now rather than at the next track.
+  if (lastPushed) pushPresence(lastPushed.track, lastPushed.opts)
+}
+
+let lastPushed: { track: Track | null; opts: { isPlaying: boolean; positionSec: number } } | null =
+  null
+
 export function pushPresence(
   track: Track | null,
   opts: { isPlaying: boolean; positionSec: number },
 ): void {
+  lastPushed = { track, opts }
   const api = bridge()
   if (!api?.isDesktop) return
   if (!discordEnabled()) return
@@ -87,6 +107,7 @@ export function pushPresence(
     durationSec: track.duration || 0,
     positionSec: Math.max(0, Math.floor(opts.positionSec || 0)),
     isPlaying: opts.isPlaying,
+    listenUrl: listenRoomCode ? roomUrl(listenRoomCode) : undefined,
   })
 }
 

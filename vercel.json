@@ -3,5 +3,8 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/yt/:path*", "destination": "/api/yt/:path*" }]
+  "rewrites": [
+    { "source": "/yt/:path*", "destination": "/api/yt/:path*" },
+    { "source": "/listen/:code", "destination": "/" }
+  ]
 }

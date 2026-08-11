@@ -98,6 +98,18 @@ function toActivity(d) {
     activity.largeImageKey = 'synapz_logo'
   }
 
+  // Listen Along: while the user is hosting a session, put a join button on
+  // their profile. Discord allows at most 2 buttons and requires http(s) URLs;
+  // it renders them for people VIEWING the profile, never for the owner — so
+  // the host can't see their own button, which is expected, not a bug.
+  //
+  // The URL is the web app, not a synapz:// deep link: Discord only accepts
+  // http(s), and a viewer may not have the desktop app yet. The web page is
+  // what offers them the download and then hands off into the app.
+  if (typeof d.listenUrl === 'string' && /^https:\/\//.test(d.listenUrl)) {
+    activity.buttons = [{ label: '🎧 Listen Along', url: d.listenUrl }]
+  }
+
   // Progress bar: Discord animates it from start/end timestamps, so we only
   // send them once per change (no per-second updates). Omitted while paused so
   // the bar freezes instead of drifting.

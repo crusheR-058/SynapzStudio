@@ -103,6 +103,15 @@ import { RADIO_STATIONS } from '../lib/radio'
 import { cloudAddToPlaylist, cloudFetchHistory, cloudFetchPublicPlaylist } from '../lib/cloud'
 import { watchPlayerRect } from '../lib/taskbar'
 import { restartToUpdate, watchUpdates, type UpdateStatus } from '../lib/updater'
+import { ListenProvider, useListen } from './listen'
+import { peekRoom, type RoomPreview } from '../lib/listen'
+import {
+  clearInviteFromUrl,
+  isDesktopApp,
+  openInDesktopApp,
+  watchInvites,
+  DOWNLOAD_URL,
+} from '../lib/invite'
 
 /* ------------------------------------------------------------------ utils */
 
@@ -3950,6 +3959,7 @@ function Player() {
 
   return (
     <div className="player" ref={barRef}>
+      <ListenBar />
       {currentTrack && (
         <div className="player__now">
           <Cover src={currentTrack.artwork} alt={currentTrack.title} className="player__art" />
@@ -3980,6 +3990,7 @@ function Player() {
             >
               <Mic2 size={16} />
             </button>
+            <ListenAlongButton />
             <button
               className={`pbtn ${queueOpen ? 'on' : ''}`}
               onClick={() => setQueueOpen(!queueOpen)}
@@ -4443,6 +4454,198 @@ function MobileNav() {
   )
 }
 
+/* ---------------------------------------------------------- listen along */
+
+// Start/stop hosting, from the player bar. While a session is live this is the
+// visible handle on it — the room bar below carries the detail.
+function ListenAlongButton() {
+  const { room, startHosting, leave, busy } = useListen()
+  const { user, openAuth } = useAuth()
+
+  const click = () => {
+    if (!user) return openAuth('login')
+    if (room) return void leave()
+    void startHosting()
+  }
+
+  return (
+    <button
+      className={`pbtn ${room ? 'on' : ''}`}
+      onClick={click}
+      disabled={busy}
+      aria-label={room ? 'Leave Listen Along' : 'Start Listen Along'}
+      title={room ? 'Leave Listen Along' : 'Listen Along — invite friends'}
+    >
+      <Radio size={16} />
+    </button>
+  )
+}
+
+// The live-session strip above the player: who's here, the invite link, and the
+// way out. Hosts get a copyable link; guests get told whose session they're in.
+function ListenBar() {
+  const { room, members, shareUrl, leave, error } = useListen()
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(false), 1600)
+    return () => window.clearTimeout(t)
+  }, [copied])
+
+  if (!room) return null
+  const listeners = members.filter((m) => !m.isHost).length
+
+  const copy = async () => {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+    } catch {
+      /* clipboard blocked — the link is still visible in the bar */
+    }
+  }
+
+  return (
+    <div className="listenbar">
+      <span className="listenbar__dot" aria-hidden />
+      <span className="listenbar__label">
+        {room.isHost ? (
+          <>
+            Listen Along is live ·{' '}
+            <b>
+              {listeners} {listeners === 1 ? 'listener' : 'listeners'}
+            </b>
+          </>
+        ) : (
+          <>
+            Listening along with <b>{room.hostName}</b>
+          </>
+        )}
+      </span>
+
+      {room.isHost && shareUrl && (
+        <button className="listenbar__link" onClick={copy} title={shareUrl}>
+          <Link2 size={14} />
+          {copied ? 'Link copied' : 'Copy invite link'}
+        </button>
+      )}
+
+      {error && <span className="listenbar__err">{error}</span>}
+
+      <button className="listenbar__leave" onClick={() => void leave()}>
+        {room.isHost ? 'End session' : 'Leave'}
+      </button>
+    </div>
+  )
+}
+
+// The invite popup. On the desktop app it's a join prompt; on the web it's the
+// download hand-off, which is the only thing the web build can offer — playback
+// sync lives in the desktop player.
+function ListenInvite() {
+  const [code, setCode] = useState<string | null>(null)
+  const [preview, setPreview] = useState<RoomPreview | null>(null)
+  const [checked, setChecked] = useState(false)
+  const { user, openAuth } = useAuth()
+  const { join, busy, error, room } = useListen()
+
+  useEffect(() => watchInvites(setCode), [])
+
+  useEffect(() => {
+    if (!code) return
+    let live = true
+    peekRoom(code).then((p) => {
+      if (!live) return
+      setPreview(p)
+      setChecked(true)
+    })
+    return () => {
+      live = false
+    }
+  }, [code])
+
+  const dismiss = () => {
+    setCode(null)
+    setPreview(null)
+    clearInviteFromUrl()
+  }
+
+  // Joining succeeds -> the room bar takes over, so the popup has no more to say.
+  useEffect(() => {
+    if (room && !room.isHost) dismiss()
+  }, [room])
+
+  if (!code) return null
+
+  const desktop = isDesktopApp()
+  const gone = checked && !preview
+
+  return (
+    <div className="authmodal" onClick={dismiss}>
+      <div className="authmodal__card listeninvite" onClick={(e) => e.stopPropagation()}>
+        <button className="modal__close" onClick={dismiss} aria-label="Close">
+          <X size={18} />
+        </button>
+
+        <div className="listeninvite__head">
+          <span className="listeninvite__badge">
+            <Radio size={20} />
+          </span>
+          <h1>{gone ? 'Session not found' : 'Listen Along'}</h1>
+          {gone ? (
+            <p>That session has ended, or the link is no longer valid.</p>
+          ) : preview ? (
+            <p>
+              <b>{preview.hostName}</b> is listening
+              {preview.track ? (
+                <>
+                  {' '}
+                  to <b>{preview.track.title}</b>
+                </>
+              ) : null}
+              . Join and you'll hear it together, in sync.
+            </p>
+          ) : (
+            <p>Looking up the session…</p>
+          )}
+        </div>
+
+        {!gone && preview && (
+          <div className="listeninvite__actions">
+            {desktop ? (
+              user ? (
+                <button className="btn-solid" disabled={busy} onClick={() => void join(code)}>
+                  {busy ? 'Joining…' : 'Join session'}
+                </button>
+              ) : (
+                <button className="btn-solid" onClick={() => openAuth('login')}>
+                  Sign in to join
+                </button>
+              )
+            ) : (
+              <>
+                {/* Already have the app? This launches it straight into the room. */}
+                <button className="btn-solid" onClick={() => openInDesktopApp(code)}>
+                  Open in Synapz Music
+                </button>
+                <a className="btn-ghost" href={DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                  <Download size={15} /> Download the app
+                </a>
+                <p className="listeninvite__note">
+                  Listen Along runs in the desktop app. Install it, sign in, and this link will
+                  drop you straight into {preview.hostName}'s session.
+                </p>
+              </>
+            )}
+            {error && <p className="login__err">{error}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* --------------------------------------------------------------- updates */
 
 // Desktop only. The update installs on quit regardless, so this is an offer to
@@ -4491,6 +4694,7 @@ function Shell() {
         <QueuePanel />
         <NowPlaying />
         <AuthModal />
+        <ListenInvite />
       </div>
       {error && <div className="toast">{error}</div>}
       <UpdateNotice />
@@ -4512,13 +4716,16 @@ function Gate() {
   return (
     <VibeProvider>
       <PlayerProvider>
-        <PlaylistsProvider>
-          <NavProvider>
-            <UIProvider>
-              <Shell />
-            </UIProvider>
-          </NavProvider>
-        </PlaylistsProvider>
+        {/* Inside PlayerProvider: as guest it drives the player, as host it reads it. */}
+        <ListenProvider>
+          <PlaylistsProvider>
+            <NavProvider>
+              <UIProvider>
+                <Shell />
+              </UIProvider>
+            </NavProvider>
+          </PlaylistsProvider>
+        </ListenProvider>
       </PlayerProvider>
     </VibeProvider>
   )

@@ -189,3 +189,47 @@ alter table public.user_settings enable row level security;
 drop policy if exists "settings_all_own" on public.user_settings;
 create policy "settings_all_own" on public.user_settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ------------------------------------------------------------ listen_rooms ---
+-- Listen Along: one row per live session, holding the host's authoritative
+-- playback state. Realtime broadcast carries the frequent position ticks (too
+-- chatty for the DB); this row is the SNAPSHOT a guest reads on join so they
+-- start in sync immediately instead of waiting for the next tick.
+--
+-- `code` is the short, link-safe id that appears in the share URL and the
+-- Discord button, so it — not the uuid — is the primary key.
+create table if not exists public.listen_rooms (
+  code         text primary key,
+  host_id      uuid not null references auth.users (id) on delete cascade,
+  host_name    text not null default 'Someone',
+  track        jsonb,
+  position_sec double precision not null default 0,
+  is_playing   boolean not null default false,
+  updated_at   timestamptz not null default now(),
+  created_at   timestamptz not null default now()
+);
+
+alter table public.listen_rooms enable row level security;
+
+-- The host owns the row outright.
+drop policy if exists "rooms_all_own" on public.listen_rooms;
+create policy "rooms_all_own" on public.listen_rooms
+  for all using (auth.uid() = host_id) with check (auth.uid() = host_id);
+
+-- Anyone may READ a room by its code — that is what makes a shared link (or the
+-- Discord "Listen Along" button) resolve for someone who isn't the host. The
+-- code is the capability: unguessable, and the row holds only what the host is
+-- already broadcasting publicly. Guests never write here; they only listen on
+-- the Realtime channel, so no guest-write policy exists.
+drop policy if exists "rooms_select_any" on public.listen_rooms;
+create policy "rooms_select_any" on public.listen_rooms
+  for select using (true);
+
+create index if not exists listen_rooms_host on public.listen_rooms (host_id);
+
+-- Rooms are ephemeral. Nothing schedules this, but it lets you (or a cron job)
+-- reap sessions whose host vanished without a clean disconnect.
+create or replace function public.prune_stale_listen_rooms(max_age interval default '12 hours')
+returns void language sql security definer as $$
+  delete from public.listen_rooms where updated_at < now() - max_age;
+$$;

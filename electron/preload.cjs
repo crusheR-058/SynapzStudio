@@ -13,6 +13,15 @@ contextBridge.exposeInMainWorld('synapz', {
   // For the Account-page status indicator.
   discordStatus: () => ipcRenderer.invoke('discord:status'),
 
+  // Listen Along: a synapz://listen/<code> invite, either arriving live or
+  // waiting from a cold start that the invite itself launched.
+  consumePendingListen: () => ipcRenderer.invoke('listen:consume-pending'),
+  onListenInvite: (cb) => {
+    const listener = (_e, code) => cb(code)
+    ipcRenderer.on('listen-invite', listener)
+    return () => ipcRenderer.removeListener('listen-invite', listener)
+  },
+
   // Auto-update: current state, live transitions, and "install it now".
   updateStatus: () => ipcRenderer.invoke('update:status'),
   restartToUpdate: () => ipcRenderer.send('update:restart'),

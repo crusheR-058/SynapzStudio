@@ -56,12 +56,47 @@ if (process.defaultApp) {
 }
 
 let pendingOAuthUrl = null
-function deliverOAuth(url) {
+let pendingListenCode = null
+
+// synapz:// links now carry two kinds of payload, routed by host:
+//   synapz://auth-callback?...   finish a Google sign-in
+//   synapz://listen/<code>       join a Listen Along session
+// Both may arrive before the renderer is listening (a cold start opened BY the
+// link), so each parks in a `pending*` slot the renderer drains when it mounts.
+function deliverDeepLink(url) {
   if (!url || !url.startsWith(`${OAUTH_PROTOCOL}://`)) return
-  if (win) {
-    win.webContents.send('oauth-callback', url)
+
+  let host = ''
+  let code = ''
+  try {
+    const u = new URL(url)
+    host = u.hostname
+    code = u.pathname.replace(/^\/+|\/+$/g, '')
+  } catch {
+    return // not a URL we can make sense of
+  }
+
+  const focus = () => {
+    if (!win) return
     if (win.isMinimized()) win.restore()
     win.focus()
+  }
+
+  if (host === 'listen') {
+    if (!code) return
+    if (win) {
+      win.webContents.send('listen-invite', code)
+      focus()
+    } else {
+      pendingListenCode = code
+    }
+    return
+  }
+
+  // Anything else is treated as the OAuth return, preserving prior behaviour.
+  if (win) {
+    win.webContents.send('oauth-callback', url)
+    focus()
   } else {
     pendingOAuthUrl = url // consumed when the renderer mounts (cold start)
   }
@@ -70,7 +105,7 @@ function deliverOAuth(url) {
 // macOS delivers the deep link via open-url.
 app.on('open-url', (event, url) => {
   event.preventDefault()
-  deliverOAuth(url)
+  deliverDeepLink(url)
 })
 
 async function startBackend() {
@@ -164,7 +199,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_e, argv) => {
     // Windows/Linux deliver the deep link as an argv of the second launch.
     const url = argv.find((a) => typeof a === 'string' && a.startsWith(`${OAUTH_PROTOCOL}://`))
-    if (url) deliverOAuth(url)
+    if (url) deliverDeepLink(url)
     if (win) {
       if (win.isMinimized()) win.restore()
       win.focus()
@@ -176,7 +211,9 @@ if (!app.requestSingleInstanceLock()) {
     const startupUrl = process.argv.find(
       (a) => typeof a === 'string' && a.startsWith(`${OAUTH_PROTOCOL}://`),
     )
-    if (startupUrl) pendingOAuthUrl = startupUrl
+    // `win` is still null here, so this parks the payload in whichever pending
+    // slot matches its kind rather than assuming it's an OAuth return.
+    if (startupUrl) deliverDeepLink(startupUrl)
 
     if (DISCORD_CLIENT_ID) discord.connect(DISCORD_CLIENT_ID)
 
@@ -207,6 +244,15 @@ ipcMain.handle('oauth:consume-pending', () => {
   const u = pendingOAuthUrl
   pendingOAuthUrl = null
   return u
+})
+
+// --- Listen Along IPC ---------------------------------------------------
+// A synapz://listen/<code> link that arrived before the renderer was listening
+// (cold start straight from the invite) waits here until the UI asks for it.
+ipcMain.handle('listen:consume-pending', () => {
+  const code = pendingListenCode
+  pendingListenCode = null
+  return code
 })
 
 // --- Auto-update IPC ----------------------------------------------------
