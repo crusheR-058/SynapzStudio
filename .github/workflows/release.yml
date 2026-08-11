@@ -151,8 +151,20 @@ jobs:
           shopt -s nullglob
           files=()
           for f in release/*.exe release/*.dmg release/*.yml release/*.blockmap; do
+            base="$(basename "$f")"
             # builder-debug.yml is electron-builder's own scratch output.
-            [ "$(basename "$f")" = "builder-debug.yml" ] && continue
+            [ "$base" = "builder-debug.yml" ] && continue
+            # Upload under the SPACE-FREE name. GitHub rewrites spaces in asset
+            # names to dots, while electron-builder writes its own "safe" name
+            # (spaces to dashes) into latest.yml as the download URL. Uploading
+            # the raw "Synapz Music Setup X.exe" therefore lands an asset that
+            # the manifest cannot address, and every auto-update 404s at the
+            # download step -- after correctly detecting the new version.
+            safe="${base// /-}"
+            if [ "$base" != "$safe" ]; then
+              mv "$f" "release/$safe"
+              f="release/$safe"
+            fi
             files+=("$f")
           done
           if [ ${#files[@]} -eq 0 ]; then
