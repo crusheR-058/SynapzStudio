@@ -1,7 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { Analytics } from '@vercel/analytics/react'
 import App from './app/App'
-import { initNative } from './lib/native'
 import './styles/fonts.css'
 import './styles/theme.css'
 import './styles/app.css'
@@ -11,9 +10,6 @@ import './styles/app.css'
 if ((window as unknown as { synapz?: { isDesktop?: boolean } }).synapz?.isDesktop) {
   document.documentElement.classList.add('is-desktop')
 }
-
-// Mobile (Capacitor) native shell setup — no-op on web/desktop.
-initNative()
 
 createRoot(document.getElementById('root')!).render(
   <>

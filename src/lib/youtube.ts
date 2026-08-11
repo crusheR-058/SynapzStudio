@@ -1,5 +1,4 @@
 import type { Track } from './types'
-import { Capacitor } from '@capacitor/core'
 import { apiUrl } from './apiBase'
 
 /**
@@ -191,8 +190,7 @@ export async function searchYouTubeLocal(query: string, opts: SearchOpts = {}): 
   if (!query.trim()) return []
   const minSec = opts.minSec ?? 1
   const maxSec = opts.maxSec ?? 60 * 15
-  // Fewer results = fewer YouTube search pages = a faster yt-dlp call. On the
-  // mobile app apiUrl() points this at the hosted Data-API proxy (same shape).
+  // Fewer results = fewer YouTube search pages = a faster yt-dlp call.
   const res = await fetch(apiUrl(`/yt/search?q=${encodeURIComponent(query)}&n=20`))
   if (!res.ok) throw new YtError('HTTP', `yt helper ${res.status}`)
   const items = await res.json()
@@ -260,14 +258,10 @@ async function runSearch(query: string, opts: SearchOpts): Promise<Track[]> {
   // The Electron desktop app bundles the backend, so the keyless /yt (yt-dlp)
   // helper is available there too (same-origin on localhost).
   const isDesktop = typeof window !== 'undefined' && !!(window as any).synapz?.isDesktop
-  // The mobile app (Capacitor) reaches /yt/search via the hosted Data-API proxy.
-  const isNative = Capacitor.isNativePlatform()
-  const hasHelper = !isProd || isDesktop || isNative
+  const hasHelper = !isProd || isDesktop
 
-  // Native mobile: the client-side key is referrer-blocked from the capacitor
-  // origin, so skip it and use the proxy helper (which runs the Data API
-  // server-side). Elsewhere, prefer the fast Data-API call when a key exists.
-  if (hasYtKey() && !isNative) {
+  // Prefer the fast Data-API call whenever a key exists.
+  if (hasYtKey()) {
     try {
       return await searchYouTube(query, 50, opts)
     } catch (e) {

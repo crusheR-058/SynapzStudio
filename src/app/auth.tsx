@@ -7,9 +7,6 @@ import {
   type ReactNode,
 } from 'react'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import { Capacitor } from '@capacitor/core'
-import { App } from '@capacitor/app'
-import { Browser } from '@capacitor/browser'
 import { supabase, supabaseEnabled } from '../lib/supabase'
 import type { User } from '../lib/api'
 
@@ -42,8 +39,8 @@ const desktop = (): DesktopBridge | undefined =>
   (window as unknown as { synapz?: DesktopBridge }).synapz
 
 // Complete a Supabase session from an OAuth deep-link callback URL. Handles both
-// PKCE (?code=) and implicit (#access_token=) returns. Shared by the desktop
-// (Electron) and mobile (Capacitor) native flows.
+// PKCE (?code=) and implicit (#access_token=) returns. Used by the desktop
+// (Electron) synapz:// deep-link flow.
 async function completeOAuth(sb: SupabaseClient, callbackUrl: string) {
   try {
     const u = new URL(callbackUrl)
@@ -114,22 +111,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return off
   }, [])
 
-  // Mobile (Capacitor) only: sign-in opens the system browser; the synapz://
-  // deep link returns here via the App plugin's 'appUrlOpen' event.
-  useEffect(() => {
-    const sb = supabase
-    if (!sb || !Capacitor.isNativePlatform()) return
-    let handle: { remove: () => void } | undefined
-    App.addListener('appUrlOpen', ({ url }) => {
-      if (!url || !url.startsWith('synapz://')) return
-      Browser.close().catch(() => {})
-      completeOAuth(sb, url)
-    }).then((h) => {
-      handle = h
-    })
-    return () => handle?.remove()
-  }, [])
-
   // Auto-close the sign-in popup the moment a session exists.
   useEffect(() => {
     if (user) setAuthOpen(false)
@@ -143,17 +124,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = useCallback(async () => {
     if (!supabase) return
-    if (Capacitor.isNativePlatform()) {
-      // Mobile: open Google in the system browser; the synapz:// deep link brings
-      // the session back (handled by the appUrlOpen effect above).
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: 'synapz://auth-callback', skipBrowserRedirect: true },
-      })
-      if (error) throw error
-      if (data?.url) await Browser.open({ url: data.url })
-      return
-    }
     const bridge = desktop()
     if (bridge?.isDesktop && bridge.openOAuth) {
       // Desktop: don't sign in inside the app window (Google blocks embedded
