@@ -101,6 +101,7 @@ import { PODCAST_TRACKS, podcastsByCategory } from '../lib/podcasts'
 import { stationByName } from '../lib/stations'
 import { RADIO_STATIONS } from '../lib/radio'
 import { cloudAddToPlaylist, cloudFetchHistory, cloudFetchPublicPlaylist } from '../lib/cloud'
+import { watchPlayerRect } from '../lib/taskbar'
 
 /* ------------------------------------------------------------------ utils */
 
@@ -3938,11 +3939,16 @@ function Player() {
   const { setFullscreen, queueOpen, setQueueOpen, openFullscreen } = useUI()
   const [extrasOpen, setExtrasOpen] = useState(false)
 
+  // Desktop app: this bar *is* the taskbar hover preview — the shell crops the
+  // thumbnail to these bounds. No-op in the browser.
+  const barRef = useRef<HTMLDivElement>(null)
+  useEffect(() => watchPlayerRect(barRef.current), [])
+
   const dur = duration || currentTrack?.duration || 0
   const liked = currentTrack ? isLiked(currentTrack.id) : false
 
   return (
-    <div className="player">
+    <div className="player" ref={barRef}>
       {currentTrack && (
         <div className="player__now">
           <Cover src={currentTrack.artwork} alt={currentTrack.title} className="player__art" />

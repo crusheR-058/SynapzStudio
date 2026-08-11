@@ -19,6 +19,7 @@ import {
 import { fetchTrending } from '../lib/audius'
 import { BOLLYWOOD_TRACKS } from '../lib/bollywood'
 import { pushPresence, clearPresence } from '../lib/discord'
+import { onMediaControl, pushNowPlaying } from '../lib/taskbar'
 
 // Fisher–Yates; used to seed autoplay radio from the baked catalog.
 function shuffled<T>(arr: T[]): T[] {
@@ -1137,6 +1138,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ms.setActionHandler('nexttrack', () => next())
     ms.setActionHandler('previoustrack', () => prev())
   }, [currentTrack, togglePlay, next, prev])
+
+  // Windows taskbar mini-player (desktop app only). Keeps the play/pause glyph
+  // and the hover tooltip in step with the bar, and lets the thumbnail's own
+  // transport buttons drive playback. The Media Session handlers above cover the
+  // hardware media keys; this covers the taskbar preview, which Windows routes
+  // through its own channel rather than through media keys.
+  useEffect(() => {
+    pushNowPlaying(currentTrack, { isPlaying })
+  }, [currentTrack, isPlaying])
+
+  useEffect(
+    () =>
+      onMediaControl((action) => {
+        if (action === 'playpause') togglePlay()
+        else if (action === 'next') next()
+        else if (action === 'prev') prev()
+      }),
+    [togglePlay, next, prev],
+  )
 
   // Discord Rich Presence (desktop app only — no-op on the web build). Fires on
   // track change + play/pause; Discord animates the progress bar itself from the

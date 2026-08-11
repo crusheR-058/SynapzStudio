@@ -6,11 +6,13 @@
 //      everything is same-origin and yt-dlp / auth work natively.
 //   2. Open the app window (Vite dev server in dev, the local backend in prod).
 //   3. Own the Discord Rich Presence connection and relay renderer IPC to it.
+//   4. Drive the Windows taskbar mini-player (see thumbar.cjs).
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const discord = require('./discord-presence.cjs')
+const thumbar = require('./thumbar.cjs')
 
 // Load the repo's .env in dev so DISCORD_CLIENT_ID is picked up (the backend
 // runs in a separate process, so its env doesn't reach us). No-op if absent.
@@ -132,6 +134,10 @@ function createWindow() {
     return { action: 'allow' }
   })
 
+  // The taskbar button has to exist before Windows will accept a thumbnail
+  // toolbar, so register it on first paint rather than at construction.
+  win.once('ready-to-show', () => thumbar.attach(win))
+
   win.webContents.on('did-finish-load', () =>
     console.log('[synapz] UI loaded:', win.webContents.getURL()),
   )
@@ -197,6 +203,12 @@ ipcMain.handle('oauth:consume-pending', () => {
   pendingOAuthUrl = null
   return u
 })
+
+// --- Taskbar mini-player IPC --------------------------------------------
+// Renderer mirrors its now-playing state and the on-screen bounds of the player
+// bar; we turn those into the thumbnail toolbar + the cropped hover preview.
+ipcMain.on('media:state', (_e, s) => thumbar.update(win, s))
+ipcMain.on('media:player-rect', (_e, r) => thumbar.setPlayerRect(win, r))
 
 // --- Discord IPC from the renderer --------------------------------------
 ipcMain.on('discord:set', (_e, data) => discord.setPresence(data))
