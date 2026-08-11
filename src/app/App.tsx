@@ -543,15 +543,6 @@ function ErrorState({ message }: { message: string }) {
   )
 }
 
-function SourceBadge({ source }: { source: Track['source'] }) {
-  if (source !== 'youtube') return null
-  return (
-    <span className="srcbadge" title="Plays from YouTube">
-      <Youtube size={11} /> YT
-    </span>
-  )
-}
-
 /* --------------------------------------------------------------- big play */
 
 function BigPlay({ tracks, size = 52 }: { tracks: Track[]; size?: number }) {
@@ -847,7 +838,6 @@ const TrackRow = memo(function TrackRow({
         <div className="trow__meta">
           <div className={`trow__title ${isCurrent ? 'accent' : ''}`} title={track.title}>
             {track.title}
-            <SourceBadge source={track.source} />
           </div>
           <div className="trow__artist" title={track.artist}>
             {track.artist}
@@ -3061,10 +3051,7 @@ function AccountView() {
           <button className="fav" onClick={() => playContext([fav.track], fav.track.id)}>
             <Cover src={fav.track.artwork} alt={fav.track.title} className="fav__art" />
             <div className="fav__meta">
-              <span className="fav__title">
-                {fav.track.title}
-                <SourceBadge source={fav.track.source} />
-              </span>
+              <span className="fav__title">{fav.track.title}</span>
               <span className="fav__sub">{fav.track.artist}</span>
               <span className="fav__count">
                 <TrendingUp size={13} /> Played {fav.count} time{fav.count > 1 ? 's' : ''}
