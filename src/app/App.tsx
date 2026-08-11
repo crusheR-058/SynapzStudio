@@ -1310,6 +1310,8 @@ function MobileSearchField() {
 // itself is licensed and can't be streamed, so we play matched versions.
 function ImportView({ url }: { url: string }) {
   const { playTrack, appendToContext } = usePlayer()
+  const { createPlaylist, addToPlaylist } = usePlaylists()
+  const { navigate } = useNav()
   const [data, setData] = useState<SpotifyImport | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'importing' | 'done' | 'error'>(
     'loading',
@@ -1317,6 +1319,8 @@ function ImportView({ url }: { url: string }) {
   const [error, setError] = useState('')
   const [matched, setMatched] = useState(0)
   const [scanned, setScanned] = useState(0)
+  const [name, setName] = useState('')
+  const [savedId, setSavedId] = useState<string | null>(null)
   const cancelRef = useRef(false)
 
   useEffect(() => {
@@ -1326,10 +1330,14 @@ function ImportView({ url }: { url: string }) {
     setError('')
     setMatched(0)
     setScanned(0)
+    setSavedId(null)
     fetchSpotifyImport(url)
       .then((d) => {
         if (cancelRef.current) return
         setData(d)
+        // Prefill with Spotify's own name: that is almost always what someone
+        // wants, and pre-filling turns "name this" from a chore into a glance.
+        setName(d.name || 'Imported playlist')
         setStatus('ready')
       })
       .catch((e) => {
@@ -1342,7 +1350,16 @@ function ImportView({ url }: { url: string }) {
     }
   }, [url])
 
-  const start = async () => {
+  /**
+   * Resolve every Spotify reference to a playable track, handing them to
+   * `onTrack` IN ORDER.
+   *
+   * Ordering is the whole reason for the results/appendIdx bookkeeping: workers
+   * finish out of order, so emitting on completion would scramble the playlist.
+   * Instead each result parks at its own index and we drain the prefix that has
+   * become contiguous — which keeps the saved playlist in Spotify's order.
+   */
+  const resolveAll = async (onTrack: (t: Track) => boolean) => {
     if (!data) return
     setStatus('importing')
     setMatched(0)
@@ -1350,19 +1367,12 @@ function ImportView({ url }: { url: string }) {
     const refs = data.tracks
     const results: (Track | null | undefined)[] = new Array(refs.length).fill(undefined)
     let appendIdx = 0
-    let started = false
     const flush = () => {
       while (appendIdx < results.length && results[appendIdx] !== undefined) {
         const t = results[appendIdx]
-        if (t) {
-          if (!started) {
-            started = true
-            playTrack(t, [t])
-          } else {
-            appendToContext([t])
-          }
-          setMatched((m) => m + 1)
-        }
+        // Count what was actually taken, so a skipped duplicate doesn't inflate
+        // "saved N of M".
+        if (t && onTrack(t)) setMatched((m) => m + 1)
         appendIdx++
       }
     }
@@ -1380,6 +1390,48 @@ function ImportView({ url }: { url: string }) {
     // resolve a few at a time so playback starts fast and the queue fills in order
     await Promise.all([worker(), worker(), worker(), worker()])
     if (!cancelRef.current) setStatus('done')
+  }
+
+  // Save into the user's own playlists. The playlist row is created FIRST and
+  // filled as matches arrive, so it shows up in the sidebar immediately and the
+  // user can watch it populate rather than waiting on a spinner.
+  const save = async () => {
+    const title = name.trim() || data?.name || 'Imported playlist'
+    const id = await createPlaylist(title)
+    if (!id) {
+      setError('Could not create the playlist.')
+      setStatus('error')
+      return
+    }
+    setSavedId(id)
+
+    // Dedupe here rather than relying on addToPlaylist's own guard: that guard
+    // reads a ref refreshed in an effect, which cannot run between the
+    // synchronous calls this loop makes. Its local check would still keep the
+    // playlist right, but the un-awaited cloud insert would fire twice and leave
+    // a duplicate row that only appears after the next reload. Two Spotify
+    // tracks resolving to one YouTube video is common enough in a playlist that
+    // this is a when, not an if.
+    const added = new Set<string>()
+    await resolveAll((t) => {
+      if (added.has(t.id)) return false
+      added.add(t.id)
+      addToPlaylist(id, t)
+      return true
+    })
+  }
+
+  const start = async () => {
+    let started = false
+    await resolveAll((t) => {
+      if (!started) {
+        started = true
+        playTrack(t, [t])
+      } else {
+        appendToContext([t])
+      }
+      return true
+    })
   }
 
   if (status === 'loading')
@@ -1421,9 +1473,31 @@ function ImportView({ url }: { url: string }) {
             {data.total > total ? ` · importing first ${total}` : ''}
           </span>
           {status === 'ready' && (
-            <button className="import__cta" onClick={start}>
-              <Play size={17} fill="#0f1115" /> Import &amp; Play
-            </button>
+            <div className="import__save">
+              <label className="import__label" htmlFor="import-name">
+                Save to your playlists as
+              </label>
+              <input
+                id="import-name"
+                className="import__input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && name.trim()) void save()
+                }}
+                placeholder="Playlist name"
+                maxLength={80}
+                autoFocus
+              />
+              <div className="import__btns">
+                <button className="import__cta" onClick={() => void save()} disabled={!name.trim()}>
+                  <ListPlus size={17} /> Save playlist
+                </button>
+                <button className="btn-ghost" onClick={() => void start()}>
+                  <Play size={15} /> Just play
+                </button>
+              </div>
+            </div>
           )}
           {(status === 'importing' || status === 'done') && (
             <div className="import__prog">
@@ -1432,9 +1506,21 @@ function ImportView({ url }: { url: string }) {
               </div>
               <span className="import__progtxt">
                 {status === 'done'
-                  ? `✓ Added ${matched} of ${total} songs to your queue`
-                  : `Matching… ${scanned}/${total} · ${matched} added`}
+                  ? savedId
+                    ? `✓ Saved ${matched} of ${total} songs to “${name.trim()}”`
+                    : `✓ Added ${matched} of ${total} songs to your queue`
+                  : savedId
+                    ? `Matching… ${scanned}/${total} · ${matched} saved`
+                    : `Matching… ${scanned}/${total} · ${matched} added`}
               </span>
+              {status === 'done' && savedId && (
+                <button
+                  className="import__open"
+                  onClick={() => navigate({ type: 'myplaylist', id: savedId }, 'playlists')}
+                >
+                  Open playlist <ChevronRight size={15} />
+                </button>
+              )}
             </div>
           )}
         </div>

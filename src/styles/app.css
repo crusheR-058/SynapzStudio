@@ -4561,3 +4561,65 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   border-radius: 50%;
   object-fit: cover;
 }
+
+/* Spotify import — name-and-save block */
+.import__save {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  max-width: 380px;
+}
+.import__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.import__input {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 14.5px;
+  outline: none;
+}
+.import__input:focus {
+  border-color: rgba(255, 46, 76, 0.55);
+  background: rgba(255, 255, 255, 0.09);
+}
+.import__btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.import__btns .import__cta {
+  margin-top: 0;
+}
+.import__btns .btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.import__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 7px 14px;
+  align-self: flex-start;
+  border-radius: 9px;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.import__open:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
