@@ -3331,8 +3331,6 @@ function Sidebar() {
 
       <div className="menu-label">
         <span>Menu</span>
-        <span className="menu-label__n">6</span>
-        <MoreHorizontal size={15} />
       </div>
       <nav className="nav">
         <NavItem icon={Home} label="Home" active={section === 'home'} onClick={() => navigate({ type: 'home' }, 'home')} />

@@ -215,21 +215,27 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
 .search input::placeholder {
   color: var(--muted-foreground);
 }
+/* Section headers in the sidebar. Raised off the background so they read as
+   dividers between groups rather than as dimmed, disabled nav entries — which
+   is how a muted 12px label sitting directly above bright items tends to look. */
 .menu-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 6px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 600;
-}
-.menu-label__n {
+  margin: 14px 0 6px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   color: #fff;
-  opacity: 0.85;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
-.menu-label > svg {
-  margin-left: auto;
+/* The first one sits directly under the search field — no gap needed there. */
+.menu-label:first-of-type {
+  margin-top: 4px;
 }
 .nav {
   display: flex;
@@ -2192,6 +2198,14 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   .profile__meta,
   .brand__collapse {
     display: none;
+  }
+  /* With its text hidden, the header's raised background would render as an
+     empty highlighted bar — so strip it back to a plain spacer at this width. */
+  .menu-label {
+    background: none;
+    border-color: transparent;
+    padding: 4px 0;
+    margin: 8px 0 2px;
   }
   .hero__content {
     max-width: 100%;
