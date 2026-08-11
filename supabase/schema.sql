@@ -227,9 +227,27 @@ create policy "rooms_select_any" on public.listen_rooms
 
 create index if not exists listen_rooms_host on public.listen_rooms (host_id);
 
--- Rooms are ephemeral. Nothing schedules this, but it lets you (or a cron job)
--- reap sessions whose host vanished without a clean disconnect.
+-- Rooms are ephemeral. Nothing schedules this, but it lets a cron job reap
+-- sessions whose host vanished without a clean disconnect.
+--
+-- SECURITY: this is `security definer`, so it deletes with the owner's rights
+-- and RLS does NOT apply to it. Postgres grants EXECUTE on new functions to
+-- PUBLIC by default, and the anon key is shipped inside the client bundle —
+-- so without the revoke below, anyone could call it with max_age => '0 seconds'
+-- and wipe every live session. Hence: locked to service_role, and the age is
+-- floored at an hour so even a caller that does get through cannot delete
+-- sessions that are still in use.
 create or replace function public.prune_stale_listen_rooms(max_age interval default '12 hours')
-returns void language sql security definer as $$
-  delete from public.listen_rooms where updated_at < now() - max_age;
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.listen_rooms
+  where updated_at < now() - greatest(max_age, interval '1 hour');
 $$;
+
+revoke all on function public.prune_stale_listen_rooms(interval) from public;
+revoke all on function public.prune_stale_listen_rooms(interval) from anon;
+revoke all on function public.prune_stale_listen_rooms(interval) from authenticated;
+grant execute on function public.prune_stale_listen_rooms(interval) to service_role;
