@@ -98,17 +98,29 @@ function toActivity(d) {
     activity.largeImageKey = 'synapz_logo'
   }
 
-  // Listen Along: while the user is hosting a session, put a join button on
-  // their profile. Discord allows at most 2 buttons and requires http(s) URLs;
-  // it renders them for people VIEWING the profile, never for the owner — so
-  // the host can't see their own button, which is expected, not a bug.
+  // Profile buttons. Discord allows at most TWO and requires http(s) URLs, and
+  // renders them only for people VIEWING the profile — never for the owner, so
+  // the host cannot see their own buttons. That is expected, not a bug, and is
+  // why testing these needs a second account.
   //
-  // The URL is the web app, not a synapz:// deep link: Discord only accepts
-  // http(s), and a viewer may not have the desktop app yet. The web page is
-  // what offers them the download and then hands off into the app.
-  if (typeof d.listenUrl === 'string' && /^https:\/\//.test(d.listenUrl)) {
-    activity.buttons = [{ label: '🎧 Listen Along', url: d.listenUrl }]
+  // URLs point at the web app rather than synapz:// deep links: Discord accepts
+  // only http(s), and a viewer may not have the desktop app at all. The web page
+  // is what plays it in the browser or hands off into the app.
+  //
+  // Note this is NOT Spotify's native "Listen along" — that is a first-party
+  // Discord integration driving real playback in the viewer's own client, and
+  // is not available to third-party Rich Presence. These are link buttons.
+  const buttons = []
+  // Length is bounded by trackUrl(), which trims metadata until the encoded URL
+  // fits. Checked rather than truncated here: slicing a URL mid-percent-escape
+  // yields a broken link, which is worse than dropping the button.
+  if (typeof d.playUrl === 'string' && /^https:\/\//.test(d.playUrl) && d.playUrl.length <= 512) {
+    buttons.push({ label: '▶ Play on Synapz', url: d.playUrl })
   }
+  if (typeof d.listenUrl === 'string' && /^https:\/\//.test(d.listenUrl)) {
+    buttons.push({ label: '🎧 Listen Along', url: d.listenUrl })
+  }
+  if (buttons.length) activity.buttons = buttons.slice(0, 2)
 
   // Progress bar: Discord animates it from start/end timestamps, so we only
   // send them once per change (no per-second updates). Omitted while paused so

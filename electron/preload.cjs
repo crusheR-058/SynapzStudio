@@ -22,6 +22,16 @@ contextBridge.exposeInMainWorld('synapz', {
     return () => ipcRenderer.removeListener('listen-invite', listener)
   },
 
+  // "Play on Synapz" — a synapz://play/<source>/<id> link, live or from a cold
+  // start. Delivered as "/play/<source>/<id>?query" so the renderer can reuse
+  // the same parser the web build runs on window.location.
+  consumePendingPlay: () => ipcRenderer.invoke('play:consume-pending'),
+  onPlayTrack: (cb) => {
+    const listener = (_e, path) => cb(path)
+    ipcRenderer.on('play-track', listener)
+    return () => ipcRenderer.removeListener('play-track', listener)
+  },
+
   // Auto-update: current state, live transitions, and "install it now".
   updateStatus: () => ipcRenderer.invoke('update:status'),
   restartToUpdate: () => ipcRenderer.send('update:restart'),

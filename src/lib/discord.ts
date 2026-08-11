@@ -7,6 +7,7 @@
 
 import type { Track } from './types'
 import { roomUrl } from './listen'
+import { trackUrl } from './tracklink'
 
 interface SynapzBridge {
   isDesktop?: boolean
@@ -22,6 +23,8 @@ interface PresencePayload {
   durationSec: number
   positionSec: number
   isPlaying: boolean
+  /** Opens this exact track in Synapz — the profile's primary button. */
+  playUrl?: string
   /** Live Listen Along room, if hosting — becomes a join button on the profile. */
   listenUrl?: string
 }
@@ -107,6 +110,7 @@ export function pushPresence(
     durationSec: track.duration || 0,
     positionSec: Math.max(0, Math.floor(opts.positionSec || 0)),
     isPlaying: opts.isPlaying,
+    playUrl: trackUrl(track),
     listenUrl: listenRoomCode ? roomUrl(listenRoomCode) : undefined,
   })
 }

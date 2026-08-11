@@ -5,6 +5,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/yt/:path*", "destination": "/api/yt/:path*" },
-    { "source": "/listen/:code", "destination": "/" }
+    { "source": "/listen/:code", "destination": "/" },
+    { "source": "/play/:source/:id", "destination": "/" }
   ]
 }

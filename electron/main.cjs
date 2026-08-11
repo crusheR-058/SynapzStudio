@@ -57,6 +57,7 @@ if (process.defaultApp) {
 
 let pendingOAuthUrl = null
 let pendingListenCode = null
+let pendingPlayTrack = null
 
 // synapz:// links now carry two kinds of payload, routed by host:
 //   synapz://auth-callback?...   finish a Google sign-in
@@ -89,6 +90,21 @@ function deliverDeepLink(url) {
       focus()
     } else {
       pendingListenCode = code
+    }
+    return
+  }
+
+  // synapz://play/<source>/<id>?t=…&a=… — the profile's "Play on Synapz"
+  // button, handed off from the web page. Forwarded as path + query so the
+  // renderer parses it with the same code the web build uses.
+  if (host === 'play') {
+    if (!code) return
+    const payload = `/play/${code}${new URL(url).search || ''}`
+    if (win) {
+      win.webContents.send('play-track', payload)
+      focus()
+    } else {
+      pendingPlayTrack = payload
     }
     return
   }
@@ -253,6 +269,11 @@ ipcMain.handle('listen:consume-pending', () => {
   const code = pendingListenCode
   pendingListenCode = null
   return code
+})
+ipcMain.handle('play:consume-pending', () => {
+  const p = pendingPlayTrack
+  pendingPlayTrack = null
+  return p
 })
 
 // --- Auto-update IPC ----------------------------------------------------

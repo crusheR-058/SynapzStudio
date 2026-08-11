@@ -105,6 +105,7 @@ import { restartToUpdate, watchUpdates, type UpdateStatus } from '../lib/updater
 import { ListenProvider, useListen } from './listen'
 import { useIndianCatalog } from '../lib/indianCatalog'
 import { peekRoom, type RoomPreview } from '../lib/listen'
+import { clearTrackRefFromUrl, resolveTrackRef, watchTrackLinks } from '../lib/tracklink'
 import {
   clearInviteFromUrl,
   isDesktopApp,
@@ -4674,6 +4675,30 @@ function MobileNav() {
   )
 }
 
+/* -------------------------------------------------------- shared tracks */
+
+// Handles a "Play on Synapz" link — from a Discord profile button, a shared
+// URL, or a synapz://play deep link. Plays straight away rather than asking:
+// the person clicked a play button, so a confirmation step would be friction.
+// Renders nothing; it is behaviour, not UI.
+function TrackLinkHandler() {
+  const { playTrack } = usePlayer()
+  const playRef = useRef(playTrack)
+  playRef.current = playTrack
+
+  useEffect(
+    () =>
+      watchTrackLinks((ref) => {
+        void resolveTrackRef(ref).then((t) => {
+          if (t) playRef.current(t, [t])
+          clearTrackRefFromUrl()
+        })
+      }),
+    [],
+  )
+  return null
+}
+
 /* ---------------------------------------------------------- listen along */
 
 // Start/stop hosting, from the player bar. While a session is live this is the
@@ -4915,6 +4940,7 @@ function Shell() {
         <NowPlaying />
         <AuthModal />
         <ListenInvite />
+        <TrackLinkHandler />
       </div>
       {error && <div className="toast">{error}</div>}
       <UpdateNotice />
