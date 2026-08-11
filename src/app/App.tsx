@@ -104,6 +104,7 @@ import { cloudAddToPlaylist, cloudFetchHistory, cloudFetchPublicPlaylist } from 
 import { watchPlayerRect } from '../lib/taskbar'
 import { restartToUpdate, watchUpdates, type UpdateStatus } from '../lib/updater'
 import { ListenProvider, useListen } from './listen'
+import { useIndianCatalog } from '../lib/indianCatalog'
 import { peekRoom, type RoomPreview } from '../lib/listen'
 import {
   clearInviteFromUrl,
@@ -380,6 +381,9 @@ function sectionForView(v: View): string {
       return 'hindi'
     case 'hollywood':
       return 'hollywood'
+    case 'artists':
+    case 'artist':
+      return 'artists'
     case 'podcasts':
       return 'podcasts'
     case 'radio':
@@ -1814,6 +1818,150 @@ function HollywoodView() {
   )
 }
 
+/* ------------------------------------------------------------ indian artists */
+
+// Browse every artist in the baked Indian catalog, grouped by scene (Hindi,
+// Punjabi, Tamil, …). A chip row like Hollywood's doesn't scale past ~50
+// artists, so this is a proper directory with its own filter, and each artist
+// gets a real page rather than a filtered lane.
+function ArtistsView() {
+  const { navigate } = useNav()
+  const { data, error } = useIndianCatalog()
+  const [q, setQ] = useState('')
+
+  const scenes = useMemo(() => {
+    if (!data) return []
+    const needle = q.trim().toLowerCase()
+    return data.INDIAN_SCENES.map((scene) => ({
+      scene,
+      artists: data
+        .indianArtistsByScene(scene)
+        .filter((a) => !needle || a.name.toLowerCase().includes(needle)),
+    })).filter((s) => s.artists.length)
+  }, [data, q])
+
+  // Artwork for a card = the artist's first track thumbnail. Cheap, always
+  // present, and avoids shipping a separate image set for 190 people.
+  const coverFor = (name: string) =>
+    data?.INDIAN_TRACKS.find((t) => t.artistTag === name)?.artwork || ''
+
+  if (error) return <ErrorState message={error} />
+  if (!data) return <Loading label="Loading the catalogue" />
+
+  const total = data.INDIAN_TRACKS.length
+  const shown = scenes.reduce((n, s) => n + s.artists.length, 0)
+
+  return (
+    <div className="view">
+      <header className="phead">
+        <div className="phead__cover phead__cover--hindi">
+          <Mic2 size={56} />
+        </div>
+        <div className="phead__meta">
+          <span className="phead__type">Indian · All languages</span>
+          <h1 className="phead__title">Artists</h1>
+          <p className="phead__sub">
+            {total.toLocaleString()} songs across {data.INDIAN_ARTISTS.length} artists —{' '}
+            {data.INDIAN_SCENES.join(', ')}. Open anyone for their full catalogue.
+          </p>
+        </div>
+      </header>
+
+      <div className="artistsearch">
+        <SearchIcon size={16} />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Find an artist…"
+          aria-label="Find an artist"
+        />
+        {q && (
+          <button onClick={() => setQ('')} aria-label="Clear">
+            <X size={15} />
+          </button>
+        )}
+      </div>
+
+      {!shown ? (
+        <div className="state">
+          <p>No artist matches “{q}”.</p>
+        </div>
+      ) : (
+        scenes.map(({ scene, artists }) => (
+          <section key={scene} className="artistscene">
+            <h2 className="artistscene__title">
+              {scene} <span>{artists.length}</span>
+            </h2>
+            <div className="artistgrid">
+              {artists.map((a) => (
+                <button
+                  key={a.name}
+                  className="artistcard"
+                  onClick={() => navigate({ type: 'artist', name: a.name }, 'artists')}
+                >
+                  <Cover src={coverFor(a.name)} alt={a.name} className="artistcard__art" />
+                  <b>{a.name}</b>
+                  <i>{a.count} songs</i>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+    </div>
+  )
+}
+
+// One artist's full page — everything the harvest found for them.
+function ArtistView({ name }: { name: string }) {
+  const { navigate } = useNav()
+  const { data, error } = useIndianCatalog()
+
+  const tracks = useMemo(() => (data ? data.indianByArtist(name) : []), [data, name])
+  const meta = data?.INDIAN_ARTISTS.find((a) => a.name === name)
+
+  if (error) return <ErrorState message={error} />
+  if (!data) return <Loading label="Loading songs" />
+
+  return (
+    <div className="view">
+      <header className="phead">
+        <Cover
+          src={tracks[0]?.artwork || ''}
+          alt={name}
+          className="phead__cover phead__cover--artist"
+        />
+        <div className="phead__meta">
+          <span className="phead__type">
+            Artist{meta?.scene ? ` · ${meta.scene}` : ''}
+          </span>
+          <h1 className="phead__title">{name}</h1>
+          <p className="phead__sub">
+            {tracks.length} songs in the catalogue, streaming free.
+          </p>
+          <div className="phead__actions">
+            <BigPlay tracks={tracks} />
+            <button
+              className="btn-ghost"
+              onClick={() => navigate({ type: 'artists' }, 'artists')}
+            >
+              <ChevronLeft size={16} /> All artists
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {!tracks.length ? (
+        <div className="state">
+          <p>No songs found for this artist.</p>
+        </div>
+      ) : (
+        <TrackList tracks={tracks} />
+      )}
+    </div>
+  )
+}
+
 // Indian podcasts — full episodes streamed from YouTube. Same chip pattern as
 // HindiView, but the search allows long videos (10 min – 5 h) so it returns
 // whole episodes instead of dropping them as "too long".
@@ -3140,6 +3288,13 @@ function Sidebar() {
           active={section === 'hollywood'}
           onClick={() => navigate({ type: 'hollywood' }, 'hollywood')}
         />
+        <NavItem
+          icon={Mic2}
+          label="Artists"
+          badge="new"
+          active={section === 'artists'}
+          onClick={() => navigate({ type: 'artists' }, 'artists')}
+        />
         <NavItem icon={LayoutGrid} label="Browse" active={section === 'browse'} onClick={() => { setQuery(''); navigate({ type: 'search' }, 'browse') }} />
         <NavItem
           icon={Podcast}
@@ -4243,6 +4398,12 @@ function CenterColumn() {
       break
     case 'hollywood':
       body = <HollywoodView />
+      break
+    case 'artists':
+      body = <ArtistsView />
+      break
+    case 'artist':
+      body = <ArtistView name={view.name} />
       break
     case 'podcasts':
       body = <PodcastsView />

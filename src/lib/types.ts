@@ -39,6 +39,8 @@ export type View =
   | { type: 'station'; q: string; name: string }
   | { type: 'hindi' }
   | { type: 'hollywood' }
+  | { type: 'artists' }
+  | { type: 'artist'; name: string }
   | { type: 'podcasts' }
   | { type: 'radio' }
   | { type: 'account' }
