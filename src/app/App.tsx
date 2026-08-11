@@ -3156,23 +3156,17 @@ function NavItem({
   icon: Icon,
   label,
   active,
-  badge,
-  dot,
   onClick,
 }: {
   icon: typeof Home
   label: string
   active: boolean
-  badge?: string
-  dot?: boolean
   onClick: () => void
 }) {
   return (
     <button className={`navitem ${active ? 'active' : ''}`} onClick={onClick}>
       <Icon size={20} />
       <span className="navitem__label">{label}</span>
-      {badge && <span className="navitem__badge">{badge}</span>}
-      {dot && <span className="navitem__dot" />}
     </button>
   )
 }
@@ -3259,21 +3253,18 @@ function Sidebar() {
         <NavItem
           icon={Clapperboard}
           label="Bollywood"
-          badge="new"
           active={section === 'hindi'}
           onClick={() => navigate({ type: 'hindi' }, 'hindi')}
         />
         <NavItem
           icon={Film}
           label="Hollywood"
-          badge="new"
           active={section === 'hollywood'}
           onClick={() => navigate({ type: 'hollywood' }, 'hollywood')}
         />
         <NavItem
           icon={Mic2}
           label="Artists"
-          badge="new"
           active={section === 'artists'}
           onClick={() => navigate({ type: 'artists' }, 'artists')}
         />

@@ -272,20 +272,6 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   flex: 1;
   text-align: left;
 }
-.navitem__badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--primary);
-  padding: 2px 7px;
-  border-radius: 999px;
-}
-.navitem__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--info);
-}
 .sidebar__spacer {
   flex: 1;
   min-height: 16px;
@@ -2202,7 +2188,6 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   .brand__name,
   .search input,
   .navitem__label,
-  .navitem__badge,
   .menu-label span,
   .profile__meta,
   .brand__collapse {
