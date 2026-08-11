@@ -23,7 +23,6 @@ import {
   Headphones,
   Heart,
   Home,
-  LayoutGrid,
   ListMusic,
   ListPlus,
   ListX,
@@ -3238,6 +3237,16 @@ function AccountView() {
 
 /* --------------------------------------------------------------- sidebar */
 
+// The sidebar's primary nav, as data — so the header count is derived from it
+// rather than typed alongside it and left to drift.
+const MENU_ITEMS: { icon: typeof Home; label: string; section: string; view: View }[] = [
+  { icon: Home, label: 'Home', section: 'home', view: { type: 'home' } },
+  { icon: Clapperboard, label: 'Bollywood', section: 'hindi', view: { type: 'hindi' } },
+  { icon: Film, label: 'Hollywood', section: 'hollywood', view: { type: 'hollywood' } },
+  { icon: Mic2, label: 'Artists', section: 'artists', view: { type: 'artists' } },
+  { icon: Podcast, label: 'Podcasts', section: 'podcasts', view: { type: 'podcasts' } },
+]
+
 function NavItem({
   icon: Icon,
   label,
@@ -3331,40 +3340,20 @@ function Sidebar() {
 
       <div className="menu-label">
         <span>Menu</span>
+        {/* Derived, never typed in: the previous hardcoded count already read
+            "6" against seven entries because it wasn't updated with the nav. */}
+        <span className="menu-label__n">{MENU_ITEMS.length}</span>
       </div>
       <nav className="nav">
-        <NavItem icon={Home} label="Home" active={section === 'home'} onClick={() => navigate({ type: 'home' }, 'home')} />
-        <NavItem
-          icon={Clapperboard}
-          label="Bollywood"
-          active={section === 'hindi'}
-          onClick={() => navigate({ type: 'hindi' }, 'hindi')}
-        />
-        <NavItem
-          icon={Film}
-          label="Hollywood"
-          active={section === 'hollywood'}
-          onClick={() => navigate({ type: 'hollywood' }, 'hollywood')}
-        />
-        <NavItem
-          icon={Mic2}
-          label="Artists"
-          active={section === 'artists'}
-          onClick={() => navigate({ type: 'artists' }, 'artists')}
-        />
-        <NavItem icon={LayoutGrid} label="Browse" active={section === 'browse'} onClick={() => { setQuery(''); navigate({ type: 'search' }, 'browse') }} />
-        <NavItem
-          icon={Podcast}
-          label="Podcasts"
-          active={section === 'podcasts'}
-          onClick={() => navigate({ type: 'podcasts' }, 'podcasts')}
-        />
-        <NavItem
-          icon={Radio}
-          label="Radio"
-          active={section === 'radio'}
-          onClick={() => navigate({ type: 'radio' }, 'radio')}
-        />
+        {MENU_ITEMS.map((item) => (
+          <NavItem
+            key={item.section}
+            icon={item.icon}
+            label={item.label}
+            active={section === item.section}
+            onClick={() => navigate(item.view, item.section)}
+          />
+        ))}
       </nav>
 
       <div className="menu-label">
