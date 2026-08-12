@@ -16,11 +16,28 @@ export interface SynapzEnv {
   apiBase: string
   /** Public origin used to build shareable /play and /listen links. */
   webOrigin: string
+  /**
+   * YouTube Data API key for calling Google directly.
+   *
+   * Web and desktop only. The project's key is HTTP-referrer-restricted, which
+   * a native app cannot satisfy — there is no referrer to send — so mobile
+   * leaves this empty and goes through the hosted /yt/search proxy, where the
+   * key lives server-side and no restriction applies.
+   */
+  youtubeKey: string
+  /**
+   * Whether /yt/search is reachable. True on the hosted web app, the desktop
+   * app (which bundles the helper) and in dev. Mobile sets it too, pointing at
+   * the deployed origin via apiBase.
+   */
+  hasSearchProxy: boolean
 }
 
 const DEFAULTS: SynapzEnv = {
   apiBase: '',
   webOrigin: 'https://synapz-music.vercel.app',
+  youtubeKey: '',
+  hasSearchProxy: true,
 }
 
 let current: SynapzEnv = { ...DEFAULTS }
@@ -37,10 +54,14 @@ export function env(): SynapzEnv {
 // An undefined/empty override must not clobber a good default — an unset
 // VITE_WEB_ORIGIN would otherwise blank the origin and produce "/play/..." links
 // with no host, which Discord rejects outright.
+//
+// Booleans pass through as-is: `false` is a deliberate value, and dropping it as
+// "empty" would make hasSearchProxy impossible to turn off.
 function strip(next: Partial<SynapzEnv>): Partial<SynapzEnv> {
-  const out: Partial<SynapzEnv> = {}
+  const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(next)) {
-    if (typeof v === 'string' && v) (out as Record<string, string>)[k] = v
+    if (typeof v === 'boolean') out[k] = v
+    else if (typeof v === 'string' && v) out[k] = v
   }
-  return out
+  return out as Partial<SynapzEnv>
 }

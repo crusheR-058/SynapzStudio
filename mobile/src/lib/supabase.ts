@@ -42,6 +42,12 @@ setSupabase(supabase)
 configure({
   apiBase: process.env.EXPO_PUBLIC_API_BASE || 'https://synapz-music.vercel.app',
   webOrigin: process.env.EXPO_PUBLIC_WEB_ORIGIN || 'https://synapz-music.vercel.app',
+  // Deliberately no youtubeKey. The project's Data API key is
+  // HTTP-referrer-restricted, and a native app sends no referrer, so calling
+  // Google directly would fail with 403 on every request. All YouTube search
+  // goes through the hosted proxy, where the key lives server-side.
+  youtubeKey: '',
+  hasSearchProxy: true,
 })
 
 export const supabaseEnabled = !!supabase

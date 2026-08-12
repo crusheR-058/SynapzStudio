@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { setSupabase, supabaseEnabled as coreEnabled } from '../../core/supabase'
 import { configure } from '../../core/config'
+import { setStorage } from '../../core/storage'
 
 /**
  * Supabase client for the WEB and DESKTOP builds — the app's cloud backend
@@ -35,6 +36,36 @@ setSupabase(supabase)
 configure({
   apiBase: ((import.meta as any).env?.VITE_API_BASE as string) || '',
   webOrigin: ((import.meta as any).env?.VITE_WEB_ORIGIN as string) || '',
+  youtubeKey: ((import.meta as any).env?.VITE_YOUTUBE_API_KEY as string) || '',
+  // The desktop app bundles the yt-dlp helper; hosted web has the serverless
+  // proxy. Both answer /yt/search, so it is available either way.
+  hasSearchProxy: true,
+})
+
+// Persistent KV for core — this is what keeps the YouTube search cache across
+// reloads. Guarded because private mode and storage quotas make it throw.
+setStorage({
+  get: (k) => {
+    try {
+      return localStorage.getItem(k)
+    } catch {
+      return null
+    }
+  },
+  set: (k, v) => {
+    try {
+      localStorage.setItem(k, v)
+    } catch {
+      /* quota or private mode — caching is best-effort */
+    }
+  },
+  remove: (k) => {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* ignore */
+    }
+  },
 })
 
 export const supabaseEnabled = coreEnabled()
