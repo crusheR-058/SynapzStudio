@@ -10,12 +10,7 @@
     "backgroundColor": "#0a0a0c",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.synapz.music",
-      "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ]
-      }
+      "bundleIdentifier": "com.synapz.music"
     },
     "android": {
       "package": "com.synapz.music",
@@ -25,10 +20,6 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
-      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -59,12 +50,24 @@
           "imageWidth": 76
         }
       ],
-      "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0ac08904-e171-4116-b08d-87e5ad39ce8e"
+      }
     }
   }
 }

@@ -1,64 +1,51 @@
-// The Audius half of the two-engine design: real background audio, lockscreen
-// transport, headphone buttons.
+// The Audius audio engine: background playback with lockscreen controls.
 //
-// TrackPlayer holds exactly ONE track at a time and the app keeps the queue.
-// That looks wasteful and isn't: TrackPlayer's queue cannot hold a YouTube
-// track, so using it would split the queue across two systems and make next/prev
-// behave differently depending on which source you happened to be on. One
-// app-level queue, one loaded track, no divergence.
+// Built on expo-audio, after react-native-track-player turned out not to compile
+// against React Native 0.86 at all — its MusicModule.kt passes a Bundle? where
+// the newer Kotlin signatures require a Bundle, so :compileDebugKotlin fails
+// outright. That was not a New Architecture warning to work around; the library
+// simply cannot build on this SDK.
+//
+// Nothing is lost by dropping it. expo-audio 57 ships a real MediaSession
+// (AudioControlsService / AudioMediaSessionCallback), which is the only reason
+// track-player was here. And it removes a whole class of risk: expo-audio is
+// versioned with the SDK, so it cannot fall out of step with it.
 
-import TrackPlayer, {
-  AppKilledPlaybackBehavior,
-  Capability,
-  RepeatMode,
-  State,
-} from 'react-native-track-player'
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio'
 import type { Track } from '@core/types'
 import type { PlaybackEngine } from './player'
 
-let ready: Promise<void> | null = null
+let player: AudioPlayer | null = null
+let configured = false
+let onEnded: (() => void) | null = null
+let sub: { remove: () => void } | null = null
 
-/** Idempotent — setupPlayer() throws if called twice, and Fast Refresh will. */
-export function ensurePlayer(): Promise<void> {
-  if (ready) return ready
-  ready = (async () => {
-    try {
-      await TrackPlayer.setupPlayer({ autoHandleInterruptions: true })
-    } catch (err) {
-      // "player already initialized" is fine — anything else is not.
-      const msg = String((err as Error)?.message ?? err)
-      if (!/already/i.test(msg)) throw err
-    }
+/** The app advances its own queue; the engine reports the end of a track. */
+export function setOnEnded(cb: (() => void) | null): void {
+  onEnded = cb
+}
 
-    await TrackPlayer.updateOptions({
-      android: {
-        // Keep the notification alive when the app is swiped away, so playback
-        // doesn't die with the task.
-        appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-      },
-      capabilities: [
-        Capability.Play,
-        Capability.Pause,
-        Capability.SkipToNext,
-        Capability.SkipToPrevious,
-        Capability.SeekTo,
-        Capability.Stop,
-      ],
-      // What fits in the collapsed notification.
-      compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext],
-      progressUpdateEventInterval: 1,
-    })
-
-    // The app advances the queue itself; letting TrackPlayer repeat the single
-    // loaded track would fight it.
-    await TrackPlayer.setRepeatMode(RepeatMode.Off)
-  })().catch((err) => {
-    // Reset so a later attempt can retry rather than being stuck on a rejected
-    // promise for the life of the process.
-    ready = null
-    throw err
+async function ensureMode(): Promise<void> {
+  if (configured) return
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    shouldPlayInBackground: true,
+    shouldRouteThroughEarpiece: false,
   })
-  return ready
+  configured = true
+}
+
+function release(): void {
+  sub?.remove()
+  sub = null
+  if (!player) return
+  try {
+    player.clearLockScreenControls()
+    player.remove()
+  } catch {
+    /* already gone */
+  }
+  player = null
 }
 
 export const audioEngine: PlaybackEngine = {
@@ -66,45 +53,58 @@ export const audioEngine: PlaybackEngine = {
 
   async load(track: Track) {
     if (!track.streamUrl) throw new Error(`Track ${track.id} has no stream URL`)
-    await ensurePlayer()
-    await TrackPlayer.reset()
-    await TrackPlayer.add({
-      id: track.id,
-      url: track.streamUrl,
-      title: track.title,
-      artist: track.artist,
-      artwork: track.artworkLarge || track.artwork,
-      duration: track.duration,
+    await ensureMode()
+    // A fresh player per track: reusing one across sources leaks the previous
+    // stream's buffered state and occasionally resumes at the old position.
+    release()
+
+    const p = createAudioPlayer({ uri: track.streamUrl })
+    player = p
+
+    // This is NOT only about showing controls. On Android, sustained background
+    // playback requires an active media session — without it the OS stops the
+    // audio after roughly three minutes, which would look like a random cutout
+    // rather than a missing feature.
+    p.setActiveForLockScreen(
+      true,
+      {
+        title: track.title,
+        artist: track.artist,
+        artworkUrl: track.artworkLarge || track.artwork,
+      },
+      { showSeekForward: true, showSeekBackward: true, isLiveStream: false },
+    )
+
+    sub = p.addListener('playbackStatusUpdate', (status) => {
+      // Guard on identity: a status from the outgoing player can arrive after a
+      // skip and would advance the queue a second time.
+      if (player !== p) return
+      if (status.didJustFinish) onEnded?.()
     })
   },
 
   async play() {
-    await ensurePlayer()
-    await TrackPlayer.play()
+    await ensureMode()
+    player?.play()
   },
 
   async pause() {
-    if (!ready) return
-    await TrackPlayer.pause()
+    player?.pause()
   },
 
   async seek(sec: number) {
-    if (!ready) return
-    await TrackPlayer.seekTo(Math.max(0, sec))
+    await player?.seekTo(Math.max(0, sec))
   },
 
   async stop() {
-    if (!ready) return
-    // reset() rather than stop(): this runs when handing off to the YouTube
-    // engine, and a paused-but-loaded track leaves a stale notification sitting
-    // there advertising a track that is no longer playing.
-    await TrackPlayer.reset()
+    // Full release rather than pause: this runs when handing off to the YouTube
+    // engine, and a paused-but-loaded player leaves a stale lockscreen entry
+    // advertising a track that is no longer playing.
+    release()
   },
 }
 
-/** True when the native player reports it is actually producing sound. */
-export async function isActuallyPlaying(): Promise<boolean> {
-  if (!ready) return false
-  const state = await TrackPlayer.getPlaybackState()
-  return state.state === State.Playing
+/** Current position in seconds, or null when nothing is loaded. */
+export function audioPosition(): number | null {
+  return player ? player.currentTime : null
 }

@@ -1,7 +1,7 @@
 // Playback state and queue — the shared half of the two-engine design.
 //
 // The engines themselves live behind PlaybackEngine so this file never knows
-// which one is running. Audius tracks go to the track-player engine (real
+// which one is running. Audius tracks go to the expo-audio engine (real
 // background audio, lockscreen transport); YouTube tracks go to the embed
 // engine, which can only play in the foreground with its video visible.
 //
@@ -20,7 +20,6 @@ import {
   type ReactNode,
 } from 'react'
 import type { Track } from '@core/types'
-import { setRemoteHandlers } from './remote'
 
 export interface PlaybackEngine {
   load(track: Track): Promise<void>
@@ -216,24 +215,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [queue, start],
   )
 
-  // Point the out-of-React remote handlers at the current callbacks. Without
-  // this the notification's buttons do nothing.
-  useEffect(() => {
-    setRemoteHandlers({
-      play: () => {
-        setPlaying(true)
-        void activeRef.current?.play()
-      },
-      pause: () => {
-        setPlaying(false)
-        void activeRef.current?.pause()
-      },
-      next,
-      prev,
-      seek,
-    })
-    return () => setRemoteHandlers({})
-  }, [next, prev, seek])
 
   const value = useMemo<PlayerApi>(
     () => ({
