@@ -1,11 +1,20 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "vite build",
+  "buildCommand": "node scripts/export-catalog.mjs && vite build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/yt/:path*", "destination": "/api/yt/:path*" },
-    { "source": "/listen/:code", "destination": "/" },
-    { "source": "/play/:source/:id", "destination": "/" }
+    {
+      "source": "/yt/:path*",
+      "destination": "/api/yt/:path*"
+    },
+    {
+      "source": "/listen/:code",
+      "destination": "/"
+    },
+    {
+      "source": "/play/:source/:id",
+      "destination": "/"
+    }
   ]
 }

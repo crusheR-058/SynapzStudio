@@ -1,5 +1,9 @@
-// Search. Audius-backed today; YouTube results arrive once core/youtube.ts moves
-// across, since it reaches the hosted /yt/search proxy that already exists.
+// Search across both sources at once.
+//
+// The local catalogue answers first because it is already in memory — results
+// appear as you type, with no spinner — and Audius is merged in when the network
+// comes back. Ordering puts Audius first: those tracks play in the background,
+// so the more capable result is the one at the top.
 
 import { useEffect, useRef, useState } from 'react'
 import { FlatList, TextInput, View, StyleSheet, ActivityIndicator } from 'react-native'
@@ -7,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Search as SearchIcon } from 'lucide-react-native'
 import type { Track } from '@core/types'
 import { searchTracks } from '@core/audius'
+import { searchLoaded } from '../../lib/catalog'
 import { usePlayer } from '../../lib/player'
 import { TrackRow } from '../../ui/TrackRow'
 import { Txt } from '../../ui/Txt'
@@ -34,11 +39,19 @@ export default function SearchScreen() {
     }
     setBusy(true)
     const id = setTimeout(async () => {
+      // Local catalogue first: it is already in memory, so results appear
+      // before the network answers. Audius is merged in when it arrives.
+      const local = searchLoaded(term)
+      if (latest.current === term && local.length) setResults(local)
       try {
         const found = await searchTracks(term)
-        if (latest.current === term) setResults(found)
+        if (latest.current !== term) return
+        // Audius first (it streams in the background), then the catalogue,
+        // de-duplicated by id.
+        const seen = new Set(found.map((t) => t.id))
+        setResults([...found, ...local.filter((t) => !seen.has(t.id))])
       } catch {
-        if (latest.current === term) setResults([])
+        if (latest.current === term) setResults(local)
       } finally {
         if (latest.current === term) setBusy(false)
       }
@@ -91,7 +104,7 @@ export default function SearchScreen() {
             <View style={styles.empty}>
               <Txt variant="section">Find something to play</Txt>
               <Txt variant="caption" tone="dim">
-                Search Audius for tracks that keep playing in the background.
+                12,759 tracks in the catalogue, plus everything on Audius.
               </Txt>
             </View>
           ) : null

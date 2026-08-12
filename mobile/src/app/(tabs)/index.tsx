@@ -8,24 +8,27 @@
 import { useEffect, useState } from 'react'
 import { ScrollView, View, RefreshControl, StyleSheet, Pressable } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useRouter } from 'expo-router'
 import { Clapperboard, Film, Podcast, Radio } from 'lucide-react-native'
 import type { Track } from '@core/types'
 import { fetchTrending, fetchUnderground } from '@core/audius'
 import { usePlayer } from '../../lib/player'
+import { prewarm } from '../../lib/catalog'
 import { Rail } from '../../ui/Rail'
 import { Txt } from '../../ui/Txt'
 import { color, radius, space, MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../../ui/theme'
 
 const SLICES = [
-  { key: 'hindi', label: 'Bollywood', Icon: Clapperboard },
+  { key: 'bollywood', label: 'Bollywood', Icon: Clapperboard },
   { key: 'hollywood', label: 'Hollywood', Icon: Film },
   { key: 'podcasts', label: 'Podcasts', Icon: Podcast },
-  { key: 'radio', label: 'Stations', Icon: Radio },
+  { key: 'stations', label: 'Stations', Icon: Radio },
 ] as const
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { playTrack } = usePlayer()
+  const router = useRouter()
   const [trending, setTrending] = useState<Track[]>([])
   const [underground, setUnderground] = useState<Track[]>([])
   const [refreshing, setRefreshing] = useState(false)
@@ -44,6 +47,9 @@ export default function HomeScreen() {
 
   useEffect(() => {
     void load()
+    // Fetch the big catalogues in the background so Search and Artists are
+    // instant by the time anyone reaches them.
+    prewarm()
   }, [])
 
   return (
@@ -79,6 +85,7 @@ export default function HomeScreen() {
           <Pressable
             key={key}
             style={({ pressed }) => [styles.chip, pressed && { backgroundColor: color.panelHover }]}
+            onPress={() => router.push(`/browse/${key}`)}
             accessibilityRole="button"
             accessibilityLabel={label}
           >

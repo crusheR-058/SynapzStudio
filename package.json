@@ -10,7 +10,7 @@
     "dev": "concurrently -k -n web,api -c cyan,magenta \"vite\" \"node server/index.mjs\"",
     "dev:web": "vite",
     "dev:api": "node server/index.mjs",
-    "build": "vite build",
+    "build": "node scripts/export-catalog.mjs && vite build",
     "preview": "vite preview --port 4173",
     "electron": "electron .",
     "dev:electron": "concurrently -k -n web,shell -c cyan,green \"vite\" \"electron .\"",
@@ -19,7 +19,8 @@
     "dist:win": "npm run icons && vite build && electron-builder --win",
     "dist:mac": "npm run icons && vite build && electron-builder --mac",
     "deploy": "vercel --prod",
-    "deploy:watch": "node scripts/deploy-watch.mjs"
+    "deploy:watch": "node scripts/deploy-watch.mjs",
+    "catalog": "node scripts/export-catalog.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
