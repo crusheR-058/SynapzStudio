@@ -25,6 +25,7 @@ import { LikesProvider } from '../lib/likes'
 import { ListenProvider } from '../lib/listenAlong'
 import { HistoryProvider } from '../lib/history'
 import { AudioHost } from '../lib/AudioHost'
+import { VideoHost, VideoSlotProvider } from '../lib/VideoHost'
 import { color } from '../ui/theme'
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
@@ -54,6 +55,7 @@ export default function RootLayout() {
             <PlayerProvider>
               <ListenProvider>
               <HistoryProvider>
+              <VideoSlotProvider>
               <AudioHost />
               <StatusBar style="light" />
               <Stack
@@ -63,10 +65,11 @@ export default function RootLayout() {
                 }}
               >
                 <Stack.Screen name="(tabs)" />
-                <Stack.Screen
-                  name="player"
-                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-                />
+                {/* A pushed screen that slides up, NOT a native modal. A modal is
+                    presented in its own container, which would put it above the
+                    root-level VideoHost and hide the expanded video behind it.
+                    Same gesture and feel, predictable z-order. */}
+                <Stack.Screen name="player" options={{ animation: 'slide_from_bottom' }} />
                 <Stack.Screen
                   name="queue"
                   options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
@@ -81,6 +84,9 @@ export default function RootLayout() {
                 <Stack.Screen name="listen/[code]" />
                 <Stack.Screen name="play/[source]/[id]" />
               </Stack>
+              {/* Above the navigator so it survives every screen change. */}
+              <VideoHost />
+              </VideoSlotProvider>
               </HistoryProvider>
               </ListenProvider>
             </PlayerProvider>

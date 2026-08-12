@@ -13,9 +13,9 @@ import { Image } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe'
 import { ChevronDown, Play, Pause, SkipBack, SkipForward, Headphones, Heart, ListMusic } from 'lucide-react-native'
-import { usePlayer, type PlaybackEngine } from '../lib/player'
+import { usePlayer } from '../lib/player'
+import { useVideoSlot } from '../lib/VideoHost'
 import { useLikes } from '../lib/likes'
 import { SeekBar } from '../ui/SeekBar'
 import { Txt } from '../ui/Txt'
@@ -25,47 +25,15 @@ export default function PlayerScreen() {
   const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const router = useRouter()
-  const { track, isPlaying, positionSec, toggle, next, prev, seek, needsVideo, setPlaying, setPosition, registerEngine } =
-    usePlayer()
+  const { track, isPlaying, positionSec, toggle, next, prev, seek, needsVideo } = usePlayer()
+  const { claim } = useVideoSlot()
+  const stageRef = useRef<View>(null)
   const { isLiked, toggle: toggleLike } = useLikes()
-  const ytRef = useRef<YoutubeIframeRef>(null)
 
-  // The embed engine exists only while this screen is mounted — the video has to
-  // stay on screen to play at all. Transport is driven by the `play` prop rather
-  // than imperative calls, so play/pause here are deliberately no-ops; seek is
-  // the only thing the ref has to do.
-  useEffect(() => {
-    if (!needsVideo) return
-    const engine: PlaybackEngine = {
-      backgroundCapable: false,
-      async load() {},
-      async play() {},
-      async pause() {},
-      async seek(sec: number) {
-        ytRef.current?.seekTo(sec, true)
-      },
-      async stop() {},
-    }
-    registerEngine('embed', engine)
-    return () => {
-      registerEngine('embed', null)
-      // Closing this screen genuinely stops a video track, so say so. Leaving
-      // isPlaying true would show the mini player mid-song with nothing playing.
-      setPlaying(false)
-    }
-  }, [needsVideo, registerEngine, setPlaying])
+  // Hand the slot back when this screen closes, so the player shrinks to its
+  // docked corner instead of staying expanded over the tabs.
+  useEffect(() => () => claim(null), [claim])
 
-  // Position comes from the embed while it owns playback; the native player is
-  // reset during a video track and has nothing to report.
-  useEffect(() => {
-    if (!needsVideo || !isPlaying) return
-    const id = setInterval(() => {
-      void ytRef.current?.getCurrentTime().then((t) => {
-        if (typeof t === 'number') setPosition(t)
-      })
-    }, 1000)
-    return () => clearInterval(id)
-  }, [needsVideo, isPlaying, setPosition])
 
   if (!track) {
     router.back()
@@ -74,7 +42,6 @@ export default function PlayerScreen() {
 
   const liked = isLiked(track.id)
   const artSize = Math.min(width - space.xl * 2, 380)
-  const pct = track.duration > 0 ? Math.min(1, positionSec / track.duration) : 0
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
@@ -102,22 +69,18 @@ export default function PlayerScreen() {
 
       <View style={styles.stage}>
         {needsVideo ? (
-          <View style={[styles.video, { width: artSize, height: (artSize * 9) / 16 }]}>
-            <YoutubePlayer
-              ref={ytRef}
-              height={(artSize * 9) / 16}
-              width={artSize}
-              videoId={track.id}
-              play={isPlaying}
-              onChangeState={(s: string) => {
-                if (s === 'paused') setPlaying(false)
-                if (s === 'playing') setPlaying(true)
-                if (s === 'ended') next()
-              }}
-              initialPlayerParams={{ controls: false, modestbranding: true, rel: false }}
-              webViewProps={{ allowsInlineMediaPlayback: true }}
-            />
-          </View>
+          // A placeholder the real player is positioned over. Measured in WINDOW
+          // coordinates, because VideoHost lives at the root of the tree and its
+          // absolute offsets are relative to the window, not to this screen.
+          <View
+            ref={stageRef}
+            style={[styles.video, { width: artSize, height: (artSize * 9) / 16 }]}
+            onLayout={() =>
+              stageRef.current?.measureInWindow((x, y, w, h) =>
+                claim({ x, y, width: w, height: h }),
+              )
+            }
+          />
         ) : (
           <Image
             source={track.artworkLarge || track.artwork}
@@ -141,8 +104,9 @@ export default function PlayerScreen() {
       {needsVideo && (
         <View style={styles.note}>
           <Txt variant="caption" tone="dim">
-            YouTube tracks play with the video on screen and pause when you leave
-            the app. Audius tracks keep playing in the background.
+            This track plays through YouTube, so the video stays on screen and
+            follows you around the app. It stops when the phone is locked —
+            Audius tracks keep playing.
           </Txt>
         </View>
       )}
