@@ -21,3 +21,9 @@ build/
 
 # Editor scratch
 .vscode/
+
+# Expo / mobile
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/.env
