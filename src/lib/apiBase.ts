@@ -1,16 +1,9 @@
-// Absolute API base for backend calls.
+// Moved to core/ so the web, desktop and mobile apps share one copy.
+// Re-exported from here so existing imports keep working unchanged.
 //
-// On the web (Vercel) and the desktop app, calls are same-origin, so the base is
-// empty and paths stay relative (`/api/...`, `/yt/...`) — which is every build we
-// ship. VITE_API_BASE stays as an escape hatch for a build served from an origin
-// that has no backend of its own: set it to the hosted Vercel URL and every
-// backend call is rewritten to hit it.
+// The side-effect import registers the web Supabase client and env with core.
+// It must happen before any core function runs, and importing it here means
+// that holds no matter which module the app reaches first.
+import './supabase'
 
-export const API_BASE = ((import.meta as any).env?.VITE_API_BASE as string | undefined)
-  ? String((import.meta as any).env.VITE_API_BASE).replace(/\/+$/, '')
-  : ''
-
-export function apiUrl(path: string): string {
-  if (!API_BASE) return path
-  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`
-}
+export * from '../../core/apiBase'
