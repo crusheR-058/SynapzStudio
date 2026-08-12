@@ -6,9 +6,26 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Session, SupabaseClient } from '@supabase/supabase-js'
-import { supabase, supabaseEnabled } from '../lib/supabase'
+import { useAuth as useClerkAuth, useClerk, useUser } from '@clerk/react'
+import { setUserIdSource } from '../../core/supabase'
+import { supabaseEnabled } from '../lib/supabase'
 import type { User } from '../lib/api'
+
+/**
+ * Auth for the WEB and DESKTOP builds. Identity is Clerk; the database is still
+ * Supabase.
+ *
+ * The AuthValue contract below is unchanged from the Supabase-Auth version on
+ * purpose — App.tsx, listen.tsx, player.tsx and playlists.tsx all consume it and
+ * none of them had to change. Only what fills it did.
+ *
+ * How the two halves meet: Clerk holds the session, and src/lib/supabase.ts
+ * builds the Supabase client with an accessToken callback that hands Clerk's
+ * session token to every request. Supabase (configured with Clerk as a
+ * third-party auth provider) verifies it and exposes the claims to RLS as
+ * auth.jwt(). setUserIdSource below is the other half: supabase.auth is
+ * unusable in that mode, so core reads the current user id from here instead.
+ */
 
 type AuthMode = 'login' | 'signup'
 
@@ -32,148 +49,83 @@ const AuthContext = createContext<AuthValue | null>(null)
 interface DesktopBridge {
   isDesktop?: boolean
   openOAuth?: (url: string) => void
-  consumePendingOAuth?: () => Promise<string | null>
-  onOAuthCallback?: (cb: (url: string) => void) => () => void
 }
 const desktop = (): DesktopBridge | undefined =>
   (window as unknown as { synapz?: DesktopBridge }).synapz
 
-// Complete a Supabase session from an OAuth deep-link callback URL. Handles both
-// PKCE (?code=) and implicit (#access_token=) returns. Used by the desktop
-// (Electron) synapz:// deep-link flow.
-async function completeOAuth(sb: SupabaseClient, callbackUrl: string) {
-  try {
-    const u = new URL(callbackUrl)
-    const code = u.searchParams.get('code')
-    if (code) {
-      await sb.auth.exchangeCodeForSession(code)
-      return
-    }
-    const frag = new URLSearchParams(u.hash.replace(/^#/, ''))
-    const access_token = frag.get('access_token')
-    const refresh_token = frag.get('refresh_token')
-    if (access_token && refresh_token) {
-      await sb.auth.setSession({ access_token, refresh_token })
-    }
-  } catch (err) {
-    console.error('OAuth callback failed', err)
-  }
-}
-
-// Map a Supabase session into the app's lightweight User shape.
-function mapUser(session: Session | null): User | null {
-  const u = session?.user
-  if (!u) return null
-  const m = (u.user_metadata || {}) as Record<string, string>
-  return {
-    name: m.full_name || m.name || (u.email ? u.email.split('@')[0] : 'Listener'),
-    email: u.email || '',
-    picture: m.avatar_url || m.picture || '',
-    provider: (u.app_metadata?.provider as string) || 'google',
-    createdAt: u.created_at ? new Date(u.created_at).getTime() : null,
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { isLoaded, isSignedIn, user: clerkUser } = useUser()
+  const { userId } = useClerkAuth()
+  const clerk = useClerk()
   const [authOpen, setAuthOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
 
+  // Hand core the current user id. Registered as a getter rather than a value so
+  // it is always read fresh — cloud.ts calls it long after this render.
   useEffect(() => {
-    if (!supabase) {
-      setLoading(false)
-      return
-    }
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(mapUser(data.session))
-      setLoading(false)
-    })
-    // Fires on sign-in (incl. completing the OAuth redirect), sign-out, refresh.
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(mapUser(session))
-      setLoading(false)
-    })
-    return () => sub.subscription.unsubscribe()
-  }, [])
+    setUserIdSource(() => userId ?? null)
+    return () => setUserIdSource(null)
+  }, [userId])
 
-  // Desktop only: complete sign-in when the synapz:// OAuth deep link comes back
-  // from the system browser.
-  useEffect(() => {
-    const sb = supabase
-    const bridge = desktop()
-    if (!sb || !bridge?.isDesktop) return
-    const off = bridge.onOAuthCallback?.((url) => completeOAuth(sb, url))
-    // Cold start: pick up a deep link that arrived before this listener mounted.
-    bridge.consumePendingOAuth?.().then((u) => {
-      if (u) completeOAuth(sb, u)
-    })
-    return off
-  }, [])
-
-  // Auto-close the sign-in popup the moment a session exists.
-  useEffect(() => {
-    if (user) setAuthOpen(false)
-  }, [user])
-
-  const openAuth = useCallback((mode: AuthMode = 'login') => {
-    setAuthMode(mode)
-    setAuthOpen(true)
-  }, [])
-  const closeAuth = useCallback(() => setAuthOpen(false), [])
+  const user: User | null =
+    isSignedIn && clerkUser
+      ? {
+          name:
+            clerkUser.fullName ||
+            clerkUser.username ||
+            clerkUser.primaryEmailAddress?.emailAddress?.split('@')[0] ||
+            'Listener',
+          email: clerkUser.primaryEmailAddress?.emailAddress || '',
+          picture: clerkUser.imageUrl || '',
+          // Clerk exposes the provider on the external account, if any.
+          provider: clerkUser.externalAccounts?.[0]?.provider || 'clerk',
+          createdAt: clerkUser.createdAt ? clerkUser.createdAt.getTime() : null,
+        }
+      : null
 
   const loginWithGoogle = useCallback(async () => {
-    if (!supabase) return
-    const bridge = desktop()
-    if (bridge?.isDesktop && bridge.openOAuth) {
-      // Desktop: don't sign in inside the app window (Google blocks embedded
-      // browsers). Get the provider URL, open it in the user's real browser, and
-      // let the synapz:// deep link bring the session back (handled in the effect).
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: 'synapz://auth-callback', skipBrowserRedirect: true },
-      })
-      if (error) throw error
-      if (data?.url) bridge.openOAuth(data.url)
-      return
-    }
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    })
-    // signInWithOAuth resolves with { error } rather than throwing; propagate it
-    // so the caller can show feedback instead of the click doing nothing.
-    if (error) throw error
-    // Browser navigates to Google; on return, onAuthStateChange sets the user.
-  }, [])
+    // Clerk's modal renders in-page, which the Electron window handles fine —
+    // unlike Google's own OAuth page, which refuses to load in an embedded
+    // browser and is why the old flow had to shell out to the system browser.
+    clerk.openSignIn({})
+    setAuthOpen(false)
+  }, [clerk])
 
   const logout = useCallback(async () => {
-    if (!supabase) return
-    await supabase.auth.signOut()
-    setUser(null)
-  }, [])
+    await clerk.signOut()
+  }, [clerk])
 
   const rename = useCallback(
     async (name: string) => {
-      if (!supabase || !user) return
-      const clean = name.trim().slice(0, 60)
-      if (!clean) return
-      const { data } = await supabase.auth.getUser()
-      const id = data.user?.id
-      await supabase.auth.updateUser({ data: { full_name: clean } })
-      if (id) await supabase.from('profiles').update({ name: clean }).eq('id', id)
-      setUser({ ...user, name: clean })
+      const clean = name.trim().slice(0, 40)
+      if (!clean || !clerkUser) return
+      // Clerk is the profile of record now, so the new name has to go there or
+      // it reverts on the next load.
+      await clerkUser.update({ firstName: clean, lastName: '' })
     },
-    [user],
+    [clerkUser],
   )
+
+  const openAuth = useCallback(
+    (mode: AuthMode = 'login') => {
+      setAuthMode(mode)
+      if (mode === 'signup') clerk.openSignUp({})
+      else clerk.openSignIn({})
+    },
+    [clerk],
+  )
+
+  const closeAuth = useCallback(() => setAuthOpen(false), [])
 
   const value: AuthValue = {
     user,
-    loading,
+    loading: !isLoaded,
     loginWithGoogle,
     logout,
     rename,
-    googleEnabled: supabaseEnabled,
+    // Sign-in needs Clerk to be configured; cloud sync additionally needs
+    // Supabase. Reported together because the UI offers them as one thing.
+    googleEnabled: supabaseEnabled && isLoaded,
     authOpen,
     authMode,
     openAuth,
@@ -187,3 +139,6 @@ export function useAuth(): AuthValue {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
 }
+
+/** Kept for the desktop shell, which still checks whether it is Electron. */
+export const isDesktopShell = () => !!desktop()?.isDesktop

@@ -26,7 +26,7 @@
 // bulk of the catalog. Seeking works identically on every source.
 
 import type { Track } from './types'
-import { sb } from './supabase'
+import { sb, currentUserId } from './supabase'
 import { env } from './config'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -103,16 +103,15 @@ export interface HostSession {
 
 export async function hostRoom(hostName: string): Promise<HostSession | null> {
   if (!sb()) return null
-  const { data: auth } = await sb()!.auth.getUser()
-  const user = auth?.user
-  if (!user) return null
+  const uid = await currentUserId()
+  if (!uid) return null
 
   const code = newRoomCode()
-  const room: Room = { code, hostId: user.id, hostName, isHost: true }
+  const room: Room = { code, hostId: uid, hostName, isHost: true }
 
   const { error } = await sb()!.from('listen_rooms').insert({
     code,
-    host_id: user.id,
+    host_id: uid,
     host_name: hostName,
     position_sec: 0,
     is_playing: false,
@@ -120,7 +119,7 @@ export async function hostRoom(hostName: string): Promise<HostSession | null> {
   if (error) return null
 
   const channel = sb()!.channel(`listen:${code}`, {
-    config: { presence: { key: user.id } },
+    config: { presence: { key: uid } },
   })
 
   let membersCb: ((m: RoomMember[]) => void) | null = null
@@ -130,7 +129,7 @@ export async function hostRoom(hostName: string): Promise<HostSession | null> {
     const members: RoomMember[] = Object.entries(raw).map(([userId, metas]) => ({
       userId,
       name: String(metas?.[0]?.name || 'Listener'),
-      isHost: userId === user.id,
+      isHost: userId === uid,
     }))
     membersCb(members)
   }
@@ -253,9 +252,8 @@ export async function joinRoom(
   controls: GuestControls,
 ): Promise<GuestSession | null> {
   if (!sb()) return null
-  const { data: auth } = await sb()!.auth.getUser()
-  const user = auth?.user
-  if (!user) return null
+  const uid = await currentUserId()
+  if (!uid) return null
 
   const snapshot = await peekRoom(code)
   if (!snapshot) return null
@@ -327,7 +325,7 @@ export async function joinRoom(
   }
 
   const channel = sb()!.channel(`listen:${code}`, {
-    config: { presence: { key: user.id } },
+    config: { presence: { key: uid } },
   })
 
   channel.on('broadcast', { event: 'tick' }, ({ payload }) => apply(payload as TickPayload))

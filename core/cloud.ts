@@ -1,4 +1,4 @@
-import { sb } from './supabase'
+import { sb, currentUserId } from './supabase'
 import type { Track } from './types'
 
 /**
@@ -12,12 +12,7 @@ import type { Track } from './types'
 
 async function uid(): Promise<string | null> {
   if (!sb()) return null
-  try {
-    const { data } = await sb()!.auth.getUser()
-    return data.user?.id ?? null
-  } catch {
-    return null
-  }
+  return currentUserId()
 }
 
 /* --------------------------------------------------------------- likes --- */
