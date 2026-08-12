@@ -13,12 +13,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
 import type { Track } from '@core/types'
+import { setRemoteHandlers } from './remote'
 
 export interface PlaybackEngine {
   load(track: Track): Promise<void>
@@ -48,6 +50,11 @@ interface PlayerApi extends PlayerState {
   seek: (sec: number) => void
   setPosition: (sec: number) => void
   setPlaying: (v: boolean) => void
+  /**
+   * Engines register themselves as they mount. The embed engine only exists
+   * while the player screen is open, so this is called with null on unmount.
+   */
+  registerEngine: (kind: 'audio' | 'embed', engine: PlaybackEngine | null) => void
 }
 
 const Ctx = createContext<PlayerApi | null>(null)
@@ -74,6 +81,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // embed screen). Held in a ref so swapping one never re-renders the tree.
   const engines = useRef<{ audio?: PlaybackEngine; embed?: PlaybackEngine }>({})
   const activeRef = useRef<PlaybackEngine | null>(null)
+
+  // Mirrors of the latest state for callers that live outside React's render
+  // cycle: the lockscreen service, and engines registering mid-flight.
+  const trackRef = useRef<Track | null>(null)
+  trackRef.current = track
+  const playingRef = useRef(false)
+  playingRef.current = isPlaying
 
   const engineFor = useCallback((t: Track): PlaybackEngine | undefined => {
     return isEmbedTrack(t) ? engines.current.embed : engines.current.audio
@@ -142,6 +156,45 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     void activeRef.current?.seek(sec)
   }, [])
 
+  const registerEngine = useCallback(
+    (kind: 'audio' | 'embed', engine: PlaybackEngine | null) => {
+      if (engine) engines.current[kind] = engine
+      else delete engines.current[kind]
+      // An engine that mounts after its track was selected has to pick it up —
+      // otherwise opening the player screen on a YouTube track leaves it loaded
+      // but silent, because start() ran before the embed existed.
+      if (engine && trackRef.current && engineFor(trackRef.current) === engine) {
+        if (activeRef.current !== engine) activeRef.current = engine
+        void engine.load(trackRef.current).then(() => {
+          if (playingRef.current) return engine.play()
+        })
+      }
+    },
+    [engineFor],
+  )
+
+  const next = useCallback(() => step(1), [step])
+  const prev = useCallback(() => step(-1), [step])
+
+  // Point the out-of-React remote handlers at the current callbacks. Without
+  // this the notification's buttons do nothing.
+  useEffect(() => {
+    setRemoteHandlers({
+      play: () => {
+        setPlaying(true)
+        void activeRef.current?.play()
+      },
+      pause: () => {
+        setPlaying(false)
+        void activeRef.current?.pause()
+      },
+      next,
+      prev,
+      seek,
+    })
+    return () => setRemoteHandlers({})
+  }, [next, prev, seek])
+
   const value = useMemo<PlayerApi>(
     () => ({
       track,
@@ -152,13 +205,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       needsVideo: isEmbedTrack(track),
       playTrack,
       toggle,
-      next: () => step(1),
-      prev: () => step(-1),
+      next,
+      prev,
       seek,
       setPosition,
       setPlaying,
+      registerEngine,
     }),
-    [track, queue, index, isPlaying, positionSec, playTrack, toggle, step, seek],
+    [track, queue, index, isPlaying, positionSec, playTrack, toggle, next, prev, seek, registerEngine],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

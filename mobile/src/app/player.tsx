@@ -7,15 +7,15 @@
 // stay visible and Play review looks for exactly that. Rather than apologise for
 // it, the screen states the trade plainly under the video.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Pressable, View, StyleSheet, useWindowDimensions } from 'react-native'
 import { Image } from 'expo-image'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import YoutubePlayer from 'react-native-youtube-iframe'
+import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe'
 import { ChevronDown, Play, Pause, SkipBack, SkipForward, Headphones, Heart } from 'lucide-react-native'
-import { usePlayer } from '../lib/player'
+import { usePlayer, type PlaybackEngine } from '../lib/player'
 import { Txt } from '../ui/Txt'
 import { color, radius, space } from '../ui/theme'
 
@@ -23,8 +23,47 @@ export default function PlayerScreen() {
   const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const router = useRouter()
-  const { track, isPlaying, positionSec, toggle, next, prev, needsVideo, setPlaying } = usePlayer()
+  const { track, isPlaying, positionSec, toggle, next, prev, needsVideo, setPlaying, setPosition, registerEngine } =
+    usePlayer()
   const [liked, setLiked] = useState(false)
+  const ytRef = useRef<YoutubeIframeRef>(null)
+
+  // The embed engine exists only while this screen is mounted — the video has to
+  // stay on screen to play at all. Transport is driven by the `play` prop rather
+  // than imperative calls, so play/pause here are deliberately no-ops; seek is
+  // the only thing the ref has to do.
+  useEffect(() => {
+    if (!needsVideo) return
+    const engine: PlaybackEngine = {
+      backgroundCapable: false,
+      async load() {},
+      async play() {},
+      async pause() {},
+      async seek(sec: number) {
+        ytRef.current?.seekTo(sec, true)
+      },
+      async stop() {},
+    }
+    registerEngine('embed', engine)
+    return () => {
+      registerEngine('embed', null)
+      // Closing this screen genuinely stops a video track, so say so. Leaving
+      // isPlaying true would show the mini player mid-song with nothing playing.
+      setPlaying(false)
+    }
+  }, [needsVideo, registerEngine, setPlaying])
+
+  // Position comes from the embed while it owns playback; the native player is
+  // reset during a video track and has nothing to report.
+  useEffect(() => {
+    if (!needsVideo || !isPlaying) return
+    const id = setInterval(() => {
+      void ytRef.current?.getCurrentTime().then((t) => {
+        if (typeof t === 'number') setPosition(t)
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [needsVideo, isPlaying, setPosition])
 
   if (!track) {
     router.back()
@@ -55,6 +94,7 @@ export default function PlayerScreen() {
         {needsVideo ? (
           <View style={[styles.video, { width: artSize, height: (artSize * 9) / 16 }]}>
             <YoutubePlayer
+              ref={ytRef}
               height={(artSize * 9) / 16}
               width={artSize}
               videoId={track.id}

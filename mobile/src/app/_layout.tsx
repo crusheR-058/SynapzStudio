@@ -20,6 +20,7 @@ import {
   Figtree_800ExtraBold,
 } from '@expo-google-fonts/figtree'
 import { PlayerProvider } from '../lib/player'
+import { AudioHost } from '../lib/AudioHost'
 import { color } from '../ui/theme'
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
@@ -45,6 +46,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.ground }}>
       <SafeAreaProvider>
         <PlayerProvider>
+          <AudioHost />
           <StatusBar style="light" />
           <Stack
             screenOptions={{
