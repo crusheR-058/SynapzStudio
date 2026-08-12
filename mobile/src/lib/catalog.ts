@@ -82,25 +82,64 @@ export async function loadTracks(name: CatalogName): Promise<Track[]> {
   return (await loadCatalog(name)).tracks
 }
 
-/** Artists with their scene and track count. Indian catalogue only. */
-export async function loadIndianArtists(): Promise<IndianArtist[]> {
-  const c = await loadCatalog('indian')
-  return (c.artists ?? []).filter((a): a is IndianArtist => typeof a === 'object')
+/** Catalogues that contribute to the Artists tab. */
+const ARTIST_CATALOGS: CatalogName[] = ['indian', 'hollywood']
+
+/**
+ * Every artist across the artist-bearing catalogues, with their scene and track
+ * count.
+ *
+ * The two catalogues describe artists differently: indian.json ships objects
+ * carrying a scene and a count, hollywood.json ships bare names. The counts for
+ * the latter are derived here so both render through the same card.
+ */
+export async function loadArtists(): Promise<IndianArtist[]> {
+  const loaded = await Promise.all(
+    ARTIST_CATALOGS.map((name) => loadCatalog(name).catch(() => null)),
+  )
+
+  const out: IndianArtist[] = []
+  for (const payload of loaded) {
+    if (!payload?.artists?.length) continue
+
+    // Count once per catalogue rather than scanning per artist — the Hollywood
+    // list is 55 names over 2,668 tracks, and a filter each would be 146k
+    // comparisons for a screen that renders on every tab switch.
+    let counts: Map<string, number> | null = null
+    if (payload.artists.some((a) => typeof a === 'string')) {
+      counts = new Map<string, number>()
+      for (const t of payload.tracks) {
+        const key = t.artist.trim().toLowerCase()
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+    }
+
+    for (const a of payload.artists) {
+      if (typeof a === 'object') out.push(a)
+      else out.push({ name: a, scene: 'Hollywood', count: counts?.get(a.trim().toLowerCase()) ?? 0 })
+    }
+  }
+  return out
 }
 
+/** Scene names, in catalogue order, with Hollywood appended. */
 export async function loadScenes(): Promise<string[]> {
-  return (await loadCatalog('indian')).scenes ?? []
+  const indian = (await loadCatalog('indian').catch(() => null))?.scenes ?? []
+  return [...indian, 'Hollywood']
 }
 
 /**
- * Tracks for one artist. Matches on the artist field, case-insensitively —
- * the harvester tags each track with the artist it was collected for, so this
- * is an exact-name lookup rather than a fuzzy search.
+ * Tracks for one artist, across every artist-bearing catalogue. Matches on the
+ * artist field, case-insensitively — the harvester tags each track with the
+ * artist it was collected for, so this is an exact-name lookup rather than a
+ * fuzzy search.
  */
 export async function tracksByArtist(name: string): Promise<Track[]> {
   const target = name.trim().toLowerCase()
-  const tracks = await loadTracks('indian')
-  return tracks.filter((t) => t.artist.trim().toLowerCase() === target)
+  const lists = await Promise.all(
+    ARTIST_CATALOGS.map((n) => loadTracks(n).catch(() => [] as Track[])),
+  )
+  return lists.flat().filter((t) => t.artist.trim().toLowerCase() === target)
 }
 
 /** Substring search across already-loaded catalogues. Instant, and offline. */
@@ -119,8 +158,7 @@ export function searchLoaded(query: string, limit = 60): Track[] {
   return out
 }
 
-/** Warm the catalogues used by search so results are there when typing starts. */
+/** Warm the catalogues used by search and Artists so both are ready on arrival. */
 export function prewarm(): void {
-  void loadCatalog('indian').catch(() => {})
-  void loadCatalog('hollywood').catch(() => {})
+  for (const name of ARTIST_CATALOGS) void loadCatalog(name).catch(() => {})
 }

@@ -11,9 +11,14 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { Image } from 'expo-image'
-import { Heart, ListMusic, ListPlus, Plus } from 'lucide-react-native'
+import { Heart, ListMusic, ListPlus, Plus, Trash2 } from 'lucide-react-native'
 import type { Track } from '@core/types'
-import { cloudAddToPlaylist, cloudFetchPlaylists, type CloudPlaylist } from '@core/cloud'
+import {
+  cloudAddToPlaylist,
+  cloudFetchPlaylists,
+  cloudRemoveFromPlaylist,
+  type CloudPlaylist,
+} from '@core/cloud'
 import { useAuth } from '../lib/auth'
 import { useLikes } from '../lib/likes'
 import { usePlayer } from '../lib/player'
@@ -23,10 +28,15 @@ import { color, radius, space } from './theme'
 export function TrackMenu({
   track,
   onClose,
+  /** Set when the sheet is opened from inside a playlist, enabling removal. */
+  removeFrom,
+  onRemoved,
 }: {
   /** null closes the sheet — the caller holds the selected track. */
   track: Track | null
   onClose: () => void
+  removeFrom?: { id: string; name: string }
+  onRemoved?: (trackId: string) => void
 }) {
   const { isLiked, toggle } = useLikes()
   const { user } = useAuth()
@@ -154,6 +164,26 @@ export function TrackMenu({
                 <ListPlus size={20} color={color.dim} />
                 <Txt variant="bodyMed">Play next</Txt>
               </Pressable>
+
+              {removeFrom && (
+                <Pressable
+                  style={({ pressed }) => [styles.item, pressed && styles.pressed]}
+                  onPress={async () => {
+                    if (!track) return
+                    // Tell the parent first so the row disappears immediately;
+                    // waiting on the network makes the tap feel broken.
+                    onRemoved?.(track.id)
+                    onClose()
+                    await cloudRemoveFromPlaylist(removeFrom.id, track.id).catch(() => {})
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Trash2 size={20} color={color.dim} />
+                  <Txt variant="bodyMed" numberOfLines={1}>
+                    Remove from {removeFrom.name}
+                  </Txt>
+                </Pressable>
+              )}
 
               <Pressable
                 style={({ pressed }) => [

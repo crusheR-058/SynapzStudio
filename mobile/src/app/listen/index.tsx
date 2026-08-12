@@ -18,10 +18,10 @@ import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Clipboard from 'expo-clipboard'
 import { ChevronDown, Copy, Headphones, LogOut, Share2, Users } from 'lucide-react-native'
-import { useAuth } from '../lib/auth'
-import { useListenAlong } from '../lib/listenAlong'
-import { Txt } from '../ui/Txt'
-import { color, radius, space } from '../ui/theme'
+import { useAuth } from '../../lib/auth'
+import { useListenAlong } from '../../lib/listenAlong'
+import { Txt } from '../../ui/Txt'
+import { color, radius, space } from '../../ui/theme'
 
 export default function ListenScreen() {
   const insets = useSafeAreaInsets()

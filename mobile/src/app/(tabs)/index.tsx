@@ -14,6 +14,7 @@ import type { Track } from '@core/types'
 import { fetchTrending, fetchUnderground } from '@core/audius'
 import { usePlayer } from '../../lib/player'
 import { prewarm } from '../../lib/catalog'
+import { useHistory } from '../../lib/history'
 import { Rail } from '../../ui/Rail'
 import { Txt } from '../../ui/Txt'
 import { color, radius, space, MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../../ui/theme'
@@ -29,6 +30,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { playTrack } = usePlayer()
   const router = useRouter()
+  const { history } = useHistory()
   const [trending, setTrending] = useState<Track[]>([])
   const [underground, setUnderground] = useState<Track[]>([])
   const [refreshing, setRefreshing] = useState(false)
@@ -104,6 +106,12 @@ export default function HomeScreen() {
         </View>
       )}
 
+      <Rail
+        title="Recently played"
+        subtitle="Pick up where you left off"
+        tracks={history}
+        onPressTrack={playTrack}
+      />
       <Rail
         title="Trending now"
         subtitle="Plays in the background"

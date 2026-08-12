@@ -1,12 +1,13 @@
-// Artists — the web app's flagship view: 185 artists across 11 scenes, grouped
-// by scene, each opening a full track list.
+// Artists — the web app's flagship view, widened: 185 Indian artists across 11
+// scenes plus 55 from the Hollywood catalogue, grouped by scene, each opening a
+// full track list.
 
 import { useEffect, useMemo, useState } from 'react'
 import { FlatList, Pressable, ScrollView, View, StyleSheet, ActivityIndicator } from 'react-native'
 import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { loadIndianArtists, loadScenes, loadTracks, type IndianArtist } from '../../lib/catalog'
+import { loadArtists, loadScenes, loadTracks, type IndianArtist } from '../../lib/catalog'
 import { Txt } from '../../ui/Txt'
 import { color, radius, space, MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../../ui/theme'
 
@@ -22,7 +23,13 @@ export default function ArtistsScreen() {
   useEffect(() => {
     void (async () => {
       try {
-        const [a, s, tracks] = await Promise.all([loadIndianArtists(), loadScenes(), loadTracks('indian')])
+        const [a, s, indian, hollywood] = await Promise.all([
+          loadArtists(),
+          loadScenes(),
+          loadTracks('indian'),
+          loadTracks('hollywood').catch(() => []),
+        ])
+        const tracks = [...indian, ...hollywood]
         setArtists(a)
         setScenes(s)
         setScene(s[0] ?? null)

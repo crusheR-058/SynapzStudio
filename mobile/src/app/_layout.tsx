@@ -23,6 +23,7 @@ import { PlayerProvider } from '../lib/player'
 import { AuthProvider } from '../lib/auth'
 import { LikesProvider } from '../lib/likes'
 import { ListenProvider } from '../lib/listenAlong'
+import { HistoryProvider } from '../lib/history'
 import { AudioHost } from '../lib/AudioHost'
 import { color } from '../ui/theme'
 
@@ -52,6 +53,7 @@ export default function RootLayout() {
           <LikesProvider>
             <PlayerProvider>
               <ListenProvider>
+              <HistoryProvider>
               <AudioHost />
               <StatusBar style="light" />
               <Stack
@@ -70,10 +72,16 @@ export default function RootLayout() {
                   options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
                 />
                 <Stack.Screen
-                  name="listen"
+                  name="listen/index"
                   options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
                 />
+                {/* Deep-link landings. Not modals: they can be the first screen
+                    the app ever shows, and a modal with nothing behind it has
+                    no way back. */}
+                <Stack.Screen name="listen/[code]" />
+                <Stack.Screen name="play/[source]/[id]" />
               </Stack>
+              </HistoryProvider>
               </ListenProvider>
             </PlayerProvider>
           </LikesProvider>

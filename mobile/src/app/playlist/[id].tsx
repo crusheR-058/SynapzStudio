@@ -64,7 +64,12 @@ export default function PlaylistScreen() {
       }
       onTrackMore={setMenuFor}
     />
-    <TrackMenu track={menuFor} onClose={() => setMenuFor(null)} />
+    <TrackMenu
+      track={menuFor}
+      onClose={() => setMenuFor(null)}
+      removeFrom={{ id, name: name ?? 'this playlist' }}
+      onRemoved={(trackId) => setTracks((cur) => (cur ?? []).filter((t) => t.id !== trackId))}
+    />
     </>
   )
 }
