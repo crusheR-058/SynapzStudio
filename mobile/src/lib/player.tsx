@@ -50,6 +50,10 @@ interface PlayerApi extends PlayerState {
   seek: (sec: number) => void
   setPosition: (sec: number) => void
   setPlaying: (v: boolean) => void
+  /** Slot a track in directly after the current one without disturbing the rest. */
+  playNext: (track: Track) => void
+  /** Jump to a queue position — what the queue screen's rows do. */
+  jumpTo: (index: number) => void
   /**
    * Engines register themselves as they mount. The embed engine only exists
    * while the player screen is open, so this is called with null on unmount.
@@ -176,6 +180,42 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const next = useCallback(() => step(1), [step])
   const prev = useCallback(() => step(-1), [step])
 
+  const playNext = useCallback(
+    (t: Track) => {
+      setQueue((cur) => {
+        if (!cur.length) return [t]
+        // Drop any existing copy FIRST, then insert — otherwise queueing a track
+        // that is already further down leaves it in twice, and `index` would be
+        // measured against the wrong list.
+        const without = cur.filter((x) => x.id !== t.id)
+        const at = without.findIndex((x) => x.id === trackRef.current?.id)
+        const insertAt = at < 0 ? without.length : at + 1
+        return [...without.slice(0, insertAt), t, ...without.slice(insertAt)]
+      })
+    },
+    [],
+  )
+
+  // Removing a track above the cursor shifts everything down, so `index` has to
+  // be re-derived from the current track rather than left pointing at a slot
+  // that now holds a different song.
+  useEffect(() => {
+    if (!track) return
+    const at = queue.findIndex((t) => t.id === track.id)
+    if (at >= 0 && at !== index) setIndex(at)
+  }, [queue, track, index])
+
+  const jumpTo = useCallback(
+    (i: number) => {
+      const t = queue[i]
+      if (!t) return
+      setIndex(i)
+      setTrack(t)
+      start(t)
+    },
+    [queue, start],
+  )
+
   // Point the out-of-React remote handlers at the current callbacks. Without
   // this the notification's buttons do nothing.
   useEffect(() => {
@@ -210,9 +250,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       seek,
       setPosition,
       setPlaying,
+      playNext,
+      jumpTo,
       registerEngine,
     }),
-    [track, queue, index, isPlaying, positionSec, playTrack, toggle, next, prev, seek, registerEngine],
+    [
+      track, queue, index, isPlaying, positionSec,
+      playTrack, toggle, next, prev, seek, playNext, jumpTo, registerEngine,
+    ],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

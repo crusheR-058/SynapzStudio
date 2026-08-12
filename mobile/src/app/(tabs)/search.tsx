@@ -13,6 +13,7 @@ import type { Track } from '@core/types'
 import { searchTracks } from '@core/audius'
 import { searchLoaded } from '../../lib/catalog'
 import { usePlayer } from '../../lib/player'
+import { TrackMenu } from '../../ui/TrackMenu'
 import { TrackRow } from '../../ui/TrackRow'
 import { Txt } from '../../ui/Txt'
 import { color, radius, space, MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../../ui/theme'
@@ -23,6 +24,7 @@ export default function SearchScreen() {
   const [q, setQ] = useState('')
   const [results, setResults] = useState<Track[]>([])
   const [busy, setBusy] = useState(false)
+  const [menuFor, setMenuFor] = useState<Track | null>(null)
 
   // Debounced, and every in-flight response is stamped with the query that
   // asked for it — otherwise a slow early request can land after a fast later
@@ -90,6 +92,7 @@ export default function SearchScreen() {
             track={item}
             active={current?.id === item.id}
             onPress={() => playTrack(item, results)}
+            onMore={() => setMenuFor(item)}
           />
         )}
         ListEmptyComponent={
@@ -110,6 +113,8 @@ export default function SearchScreen() {
           ) : null
         }
       />
+
+      <TrackMenu track={menuFor} onClose={() => setMenuFor(null)} />
     </View>
   )
 }

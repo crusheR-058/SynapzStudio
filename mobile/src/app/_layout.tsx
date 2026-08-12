@@ -20,6 +20,9 @@ import {
   Figtree_800ExtraBold,
 } from '@expo-google-fonts/figtree'
 import { PlayerProvider } from '../lib/player'
+import { AuthProvider } from '../lib/auth'
+import { LikesProvider } from '../lib/likes'
+import { ListenProvider } from '../lib/listenAlong'
 import { AudioHost } from '../lib/AudioHost'
 import { color } from '../ui/theme'
 
@@ -45,22 +48,36 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: color.ground }}>
       <SafeAreaProvider>
-        <PlayerProvider>
-          <AudioHost />
-          <StatusBar style="light" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: color.ground },
-            }}
-          >
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="player"
-              options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-            />
-          </Stack>
-        </PlayerProvider>
+        <AuthProvider>
+          <LikesProvider>
+            <PlayerProvider>
+              <ListenProvider>
+              <AudioHost />
+              <StatusBar style="light" />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: color.ground },
+                }}
+              >
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen
+                  name="player"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="queue"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="listen"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+              </Stack>
+              </ListenProvider>
+            </PlayerProvider>
+          </LikesProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )

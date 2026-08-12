@@ -10,6 +10,7 @@ import { ChevronLeft, Shuffle } from 'lucide-react-native'
 import type { Track } from '@core/types'
 import { loadTracks, type CatalogName } from '../../lib/catalog'
 import { usePlayer } from '../../lib/player'
+import { TrackMenu } from '../../ui/TrackMenu'
 import { TrackRow } from '../../ui/TrackRow'
 import { Txt } from '../../ui/Txt'
 import { color, radius, space, MINI_PLAYER_HEIGHT } from '../../ui/theme'
@@ -29,6 +30,7 @@ export default function BrowseScreen() {
   const router = useRouter()
   const { playTrack, track: current } = usePlayer()
   const [tracks, setTracks] = useState<Track[] | null>(null)
+  const [menuFor, setMenuFor] = useState<Track | null>(null)
 
   useEffect(() => {
     setTracks(null)
@@ -89,6 +91,7 @@ export default function BrowseScreen() {
               index={index}
               active={current?.id === item.id}
               onPress={() => playTrack(item, tracks)}
+              onMore={() => setMenuFor(item)}
             />
           )}
           ListEmptyComponent={
@@ -100,6 +103,8 @@ export default function BrowseScreen() {
           }
         />
       )}
+
+      <TrackMenu track={menuFor} onClose={() => setMenuFor(null)} />
     </View>
   )
 }

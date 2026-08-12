@@ -25,6 +25,12 @@ export const supabase: SupabaseClient | null =
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: false,
+          // PKCE rather than implicit: the auth browser returns ?code=, and
+          // exchangeCodeForSession verifies it against the code_verifier this
+          // client stored in AsyncStorage — so a stolen redirect URL alone
+          // cannot become a session. Also the flow Google Custom Tabs handle
+          // most reliably.
+          flowType: 'pkce',
         },
       })
     : null

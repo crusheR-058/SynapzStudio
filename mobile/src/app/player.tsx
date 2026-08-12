@@ -14,8 +14,10 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import YoutubePlayer, { type YoutubeIframeRef } from 'react-native-youtube-iframe'
-import { ChevronDown, Play, Pause, SkipBack, SkipForward, Headphones, Heart } from 'lucide-react-native'
+import { ChevronDown, Play, Pause, SkipBack, SkipForward, Headphones, Heart, ListMusic } from 'lucide-react-native'
 import { usePlayer, type PlaybackEngine } from '../lib/player'
+import { useLikes } from '../lib/likes'
+import { SeekBar } from '../ui/SeekBar'
 import { Txt } from '../ui/Txt'
 import { color, radius, space } from '../ui/theme'
 
@@ -23,9 +25,9 @@ export default function PlayerScreen() {
   const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const router = useRouter()
-  const { track, isPlaying, positionSec, toggle, next, prev, needsVideo, setPlaying, setPosition, registerEngine } =
+  const { track, isPlaying, positionSec, toggle, next, prev, seek, needsVideo, setPlaying, setPosition, registerEngine } =
     usePlayer()
-  const [liked, setLiked] = useState(false)
+  const { isLiked, toggle: toggleLike } = useLikes()
   const ytRef = useRef<YoutubeIframeRef>(null)
 
   // The embed engine exists only while this screen is mounted — the video has to
@@ -70,6 +72,7 @@ export default function PlayerScreen() {
     return null
   }
 
+  const liked = isLiked(track.id)
   const artSize = Math.min(width - space.xl * 2, 380)
   const pct = track.duration > 0 ? Math.min(1, positionSec / track.duration) : 0
 
@@ -87,7 +90,14 @@ export default function PlayerScreen() {
         <Txt variant="micro" tone="dim">
           {needsVideo ? 'PLAYING VIDEO' : 'NOW PLAYING'}
         </Txt>
-        <View style={{ width: 26 }} />
+        <Pressable
+          onPress={() => router.push('/queue')}
+          hitSlop={14}
+          accessibilityRole="button"
+          accessibilityLabel="Show queue"
+        >
+          <ListMusic size={22} color={color.dim} />
+        </Pressable>
       </View>
 
       <View style={styles.stage}>
@@ -138,10 +148,7 @@ export default function PlayerScreen() {
       )}
 
       <View style={styles.scrub}>
-        <View style={styles.scrubTrack}>
-          <View style={[styles.scrubFill, { width: `${pct * 100}%` }]} />
-          <View style={[styles.scrubKnob, { left: `${pct * 100}%` }]} />
-        </View>
+        <SeekBar positionSec={positionSec} durationSec={track.duration} onSeek={seek} />
         <View style={styles.times}>
           <Txt variant="caption" tone="dimmer">
             {fmt(positionSec)}
@@ -153,7 +160,12 @@ export default function PlayerScreen() {
       </View>
 
       <View style={styles.transport}>
-        <Pressable onPress={() => setLiked((v) => !v)} hitSlop={12} accessibilityLabel="Like">
+        <Pressable
+          onPress={() => toggleLike(track)}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={liked ? 'Remove from liked songs' : 'Like this song'}
+        >
           <Heart
             size={22}
             color={liked ? color.accent : color.dimmer}
@@ -184,7 +196,12 @@ export default function PlayerScreen() {
           <SkipForward size={30} color={color.text} fill={color.text} />
         </Pressable>
 
-        <Pressable hitSlop={12} accessibilityLabel="Listen along">
+        <Pressable
+          onPress={() => router.push('/listen')}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Listen along"
+        >
           <Headphones size={22} color={color.dimmer} />
         </Pressable>
       </View>

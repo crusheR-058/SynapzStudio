@@ -5,6 +5,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
       "source": "/yt/:path*",
       "destination": "/api/yt/:path*"
     },
