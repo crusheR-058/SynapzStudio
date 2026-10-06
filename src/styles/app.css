@@ -3273,7 +3273,9 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
 /* hero feature */
 .hmhero {
   position: relative;
-  height: 320px;
+  /* A floor, not a fixed height: a two-line title needs more room than this,
+     and a fixed box made the text squeeze and clip instead of the card growing. */
+  min-height: 320px;
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid var(--hairline);
@@ -3300,12 +3302,18 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
 }
 .hmhero__content {
   position: relative;
-  height: 100%;
+  box-sizing: border-box;
+  min-height: 320px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 36px 40px;
+  padding: 32px 40px;
   max-width: 60%;
+}
+/* The title and description hide their overflow to clamp lines, which lets a
+   flex column shrink them below their own text — cutting lines in half. */
+.hmhero__content > * {
+  flex-shrink: 0;
 }
 .hmhero__eyebrow {
   display: inline-flex;
@@ -3319,10 +3327,13 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
 }
 .hmhero__title {
   margin: 12px 0 14px;
-  font-size: clamp(34px, 4vw, 52px);
-  line-height: 1.02;
+  font-size: clamp(30px, 3.2vw, 46px);
+  /* Tight leading clipped descenders against the overflow box. */
+  line-height: 1.1;
+  padding-bottom: 0.06em;
   font-weight: 800;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -3354,7 +3365,7 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   color: var(--muted-foreground);
   max-width: 46ch;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -3853,7 +3864,10 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hmhero {
-    height: 280px;
+    min-height: 280px;
+  }
+  .hmhero__content {
+    min-height: 280px;
   }
   .hmhero__content {
     max-width: 78%;
@@ -3869,7 +3883,11 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
   }
   .hmhero__content {
     max-width: 100%;
+    min-height: 280px;
     padding: 24px;
+  }
+  .hmhero {
+    min-height: 280px;
   }
   .hmhero__img {
     width: 100%;
