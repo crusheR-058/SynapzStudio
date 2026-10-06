@@ -154,7 +154,7 @@ function Avatar({ name, picture }: { name: string; picture?: string }) {
 
 export function FriendsView() {
   const { user, openAuth } = useAuth()
-  const { playTrack } = usePlayer()
+  const { playRadio } = usePlayer()
   const { join, busy } = useListen()
 
   const [status, setStatus] = useState<SocialStatus | 'loading'>('loading')
@@ -387,7 +387,7 @@ export function FriendsView() {
                       {track && (
                         <button
                           className="friend__play"
-                          onClick={() => playTrack(track, [track])}
+                          onClick={() => playRadio(track)}
                           aria-label={`Play ${track.title}`}
                           title="Play this song"
                         >

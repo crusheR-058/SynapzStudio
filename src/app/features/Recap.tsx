@@ -175,14 +175,14 @@ export function RecapView() {
             <section className="section">
               <div className="section__head">
                 <h2>Top songs</h2>
-                <button className="section__all" onClick={() => playContext(topTracks)}>
+                <button className="section__all" onClick={() => playContext(topTracks, undefined, 'Your top songs')}>
                   Play all
                 </button>
               </div>
               <ol className="rank">
                 {recap.topTracks.map((x, i) => (
                   <li key={x.track.id}>
-                    <button className="rank__row" onClick={() => playContext(topTracks, x.track.id)}>
+                    <button className="rank__row" onClick={() => playContext(topTracks, x.track.id, 'Your top songs')}>
                       <span className="rank__n">{i + 1}</span>
                       <Cover src={x.track.artwork} alt={x.track.title} className="rank__art" />
                       <span className="rank__meta">

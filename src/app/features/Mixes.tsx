@@ -61,7 +61,7 @@ export function MadeForYou() {
                 className="card__play"
                 onClick={(e) => {
                   e.stopPropagation()
-                  playContext(m.tracks)
+                  playContext(m.tracks, undefined, m.name)
                 }}
                 aria-label={`Play ${m.name}`}
               >

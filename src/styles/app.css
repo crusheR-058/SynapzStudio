@@ -5643,3 +5643,54 @@ html[data-vibe]:not([data-vibe='off']) .nowfs__bg {
     min-height: 8px;
   }
 }
+
+/* --------------------------------------------------------------- song radio */
+.queuepanel__source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.queuepanel__source svg {
+  flex: 0 0 auto;
+}
+.queuepanel__source span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queuepanel__source b {
+  color: var(--foreground);
+  font-weight: 700;
+}
+.queuepanel__source i {
+  font-style: normal;
+}
+.queuepanel__source.is-radio {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+.queuepanel__source.is-radio svg {
+  color: var(--primary);
+}
+/* The row's action column was sized for three buttons; "Start radio" is a
+   fourth. Widen it where there is room, and drop the button where the column
+   is already squeezed (it stays reachable on wider layouts). */
+.trow,
+.tlist__head {
+  grid-template-columns: 36px 1fr 120px 132px 60px;
+}
+@media (max-width: 920px) {
+  .trow,
+  .tlist__head {
+    grid-template-columns: 36px 1fr 92px 52px;
+  }
+  .trow__radio {
+    display: none;
+  }
+}

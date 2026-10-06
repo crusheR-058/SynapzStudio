@@ -192,6 +192,12 @@ Base64-encode a cert with `base64 -w0 cert.pfx` (Linux) or
   desktop app remembers a music folder; the browser can open one for the session.
 
 **Made for you**
+- **Song radio** — play a song from search, Home or a genre lane and it is
+  followed by related songs rather than by its neighbours in the list. Playlists,
+  Liked Songs, artists and mixes still play in their own order, then carry on
+  with related songs when they end. Every song also has a "Start radio" button.
+  Recommendations come from YouTube's own mix for the song (desktop app), the
+  tagged built-in catalogs and search — never from Audius.
 - **Daily mixes** — auto-playlists built from your own listening (artist mixes,
   On Repeat, Rediscover, Discovery), refreshed each day.
 - **Recap** — top songs and artists, listening by hour, streaks and a listening

@@ -125,6 +125,40 @@ app.get('/yt/search', async (req, res) => {
   }
 })
 
+// --- youtube "mix" for one song (yt-dlp) — the song-radio source ----------
+// YouTube builds an endless related-songs playlist for any video, addressed as
+// list=RD<videoId>. The Data API won't return these, so this exists only where
+// yt-dlp does (dev and the desktop app); the hosted site has no such route and
+// the client falls back to its other recommendation sources.
+app.get('/yt/mix', async (req, res) => {
+  const id = String(req.query.id || '')
+  // The id goes into a URL handed to yt-dlp, so accept only a real video id.
+  if (!/^[\w-]{6,20}$/.test(id)) return res.json([])
+  try {
+    const out = await run([
+      '--flat-playlist',
+      '-J',
+      '--no-warnings',
+      '--ignore-config',
+      '--playlist-end',
+      '40',
+      `https://www.youtube.com/watch?v=${id}&list=RD${id}`,
+    ])
+    const data = JSON.parse(out)
+    const items = (data.entries || []).filter((e) => e && e.id).map((e) => ({
+      id: e.id,
+      title: e.title || 'Untitled',
+      uploader: (e.uploader || e.channel || 'YouTube').replace(/\s*-\s*Topic$/, ''),
+      duration: e.duration || 0,
+      views: e.view_count || 0,
+      thumb: `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg`,
+    }))
+    res.json(items)
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, runtime: 'local' }))
 
 // Serve the built frontend when it exists (desktop app / production), so the UI

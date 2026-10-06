@@ -207,6 +207,22 @@ function mapLocal(it: any): Track {
   }
 }
 
+/**
+ * YouTube's auto-generated mix for one video — the related songs it would play
+ * next. Served by the local yt-dlp helper only (see /yt/mix in the backend), so
+ * this resolves to an empty list wherever that route doesn't exist.
+ */
+export async function fetchYtMix(videoId: string): Promise<Track[]> {
+  try {
+    const res = await fetch(apiUrl(`/yt/mix?id=${encodeURIComponent(videoId)}`))
+    if (!res.ok) return []
+    const items = await res.json()
+    return Array.isArray(items) ? items.map(mapLocal) : []
+  } catch {
+    return []
+  }
+}
+
 export async function searchYouTubeLocal(query: string, opts: SearchOpts = {}): Promise<Track[]> {
   if (!query.trim()) return []
   const minSec = opts.minSec ?? 1

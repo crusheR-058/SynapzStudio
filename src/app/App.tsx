@@ -108,6 +108,7 @@ import { ListenProvider, useListen } from './listen'
 import { useIndianCatalog } from '../lib/indianCatalog'
 import { peekRoom, type RoomPreview } from '../lib/listen'
 import { clearTrackRefFromUrl, resolveTrackRef, watchTrackLinks } from '../lib/tracklink'
+import { canStartRadio } from '../lib/recommend'
 import {
   clearInviteFromUrl,
   isDesktopApp,
@@ -509,6 +510,33 @@ function UIProvider({ children }: { children: ReactNode }) {
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>
 }
 
+/* ------------------------------------------------------------ play mode */
+
+// How a click on a song should behave depends on the page it is on.
+//
+// On a COLLECTION page (a playlist, Liked Songs, an artist, a mix) the song
+// plays within that list, in the list's order. Everywhere else — search, Home,
+// a genre or language lane — the list is just where the song happened to be
+// found, so the click starts a RADIO: that song, then songs related to it.
+//
+// The page decides, not each row: CenterColumn provides the mode for the
+// current view and every TrackRow / TrackCard under it reads it from here.
+interface PlayMode {
+  mode: 'collection' | 'radio'
+  /** Shown in the queue as "Playing from …" for a collection. */
+  label: string
+}
+
+const PlayModeContext = createContext<PlayMode>({ mode: 'collection', label: '' })
+
+/** Returns the right "play this song" action for wherever the caller is rendered. */
+function usePlayFrom(): (track: Track, context: Track[]) => void {
+  const { mode, label } = useContext(PlayModeContext)
+  const { playContext, playRadio } = usePlayer()
+  return (track, context) =>
+    mode === 'radio' ? playRadio(track) : playContext(context, track.id, label)
+}
+
 /* --------------------------------------------------------------- visuals */
 
 export function Cover({
@@ -594,6 +622,9 @@ function ErrorState({ message }: { message: string }) {
 
 export function BigPlay({ tracks, size = 52 }: { tracks: Track[]; size?: number }) {
   const { playContext, currentTrack, isPlaying, togglePlay, queue } = usePlayer()
+  // Pressing the page's big button means "play this list", even on a page
+  // where clicking a single song would start a radio.
+  const { label } = useContext(PlayModeContext)
   // "Is this button's list the one currently playing?" — compare by content, not
   // just length: a length check mis-fires between two equal-length lists that
   // share the current track, and breaks once autoplay radio grows the queue.
@@ -608,7 +639,7 @@ export function BigPlay({ tracks, size = 52 }: { tracks: Track[]; size?: number 
       className="bigplay"
       style={{ width: size, height: size }}
       disabled={!tracks.length}
-      onClick={() => (isThis ? togglePlay() : playContext(tracks))}
+      onClick={() => (isThis ? togglePlay() : playContext(tracks, undefined, label))}
       aria-label={active ? 'Pause' : 'Play'}
     >
       {active ? (
@@ -760,14 +791,15 @@ function AddToPlaylistButton({
 /* --------------------------------------------------------------- cards */
 
 function TrackCard({ track, context }: { track: Track; context: Track[] }) {
-  const { playContext, currentTrack, isPlaying } = usePlayer()
+  const { currentTrack, isPlaying } = usePlayer()
+  const play = usePlayFrom()
   const isCurrent = currentTrack?.id === track.id
   return (
     <div
       className="card"
-      onDoubleClick={() => playContext(context, track.id)}
+      onDoubleClick={() => play(track, context)}
       onClick={() => {
-        if (isCoarsePointer()) playContext(context, track.id)
+        if (isCoarsePointer()) play(track, context)
       }}
     >
       <div className="card__art">
@@ -776,7 +808,7 @@ function TrackCard({ track, context }: { track: Track; context: Track[] }) {
           className={`card__play ${isCurrent && isPlaying ? 'is-current' : ''}`}
           onClick={(e) => {
             e.stopPropagation()
-            playContext(context, track.id)
+            play(track, context)
           }}
           aria-label={`Play ${track.title}`}
         >
@@ -850,13 +882,14 @@ const TrackRow = memo(function TrackRow({
   context: Track[]
   onRemove?: () => void
 }) {
-  const { playContext, currentTrack, isPlaying, toggleLike, isLiked, addToQueue } = usePlayer()
+  const { currentTrack, isPlaying, toggleLike, isLiked, addToQueue, playRadio } = usePlayer()
+  const play = usePlayFrom()
   const isCurrent = currentTrack?.id === track.id
   const liked = isLiked(track.id)
   return (
     <div
       className={`trow ${isCurrent ? 'is-current' : ''}`}
-      onDoubleClick={() => playContext(context, track.id)}
+      onDoubleClick={() => play(track, context)}
     >
       <div className="trow__index">
         {isCurrent && isPlaying ? (
@@ -866,7 +899,7 @@ const TrackRow = memo(function TrackRow({
             <span className="trow__num">{index + 1}</span>
             <button
               className="trow__play"
-              onClick={() => playContext(context, track.id)}
+              onClick={() => play(track, context)}
               aria-label={`Play ${track.title}`}
             >
               <Play size={13} fill="currentColor" />
@@ -877,7 +910,7 @@ const TrackRow = memo(function TrackRow({
       <div
         className="trow__main"
         onClick={() => {
-          if (isCoarsePointer()) playContext(context, track.id)
+          if (isCoarsePointer()) play(track, context)
         }}
       >
         <Cover src={track.artwork} alt={track.title} className="trow__art" />
@@ -892,6 +925,18 @@ const TrackRow = memo(function TrackRow({
       </div>
       <div className="trow__plays">{fmtCount(track.playCount)} plays</div>
       <div className="trow__actions">
+        {canStartRadio(track) && (
+          // Available on every page — inside a playlist this is how to leave
+          // its order and hear more like one song.
+          <button
+            className="trow__queue trow__radio"
+            onClick={() => playRadio(track)}
+            aria-label="Start radio"
+            title="Start radio — play songs like this"
+          >
+            <Radio size={15} />
+          </button>
+        )}
         <button
           className="trow__queue"
           onClick={() => addToQueue(track)}
@@ -1065,8 +1110,17 @@ function HomeNowPlaying() {
 
 function HomeView() {
   const { navigate, setQuery } = useNav()
-  const { playContext, toggleLike, isLiked, currentTrack, isPlaying, togglePlay, recent, getStats } =
-    usePlayer()
+  const {
+    playContext,
+    playRadio,
+    toggleLike,
+    isLiked,
+    currentTrack,
+    isPlaying,
+    togglePlay,
+    recent,
+    getStats,
+  } = usePlayer()
   const [stats] = useState(() => getStats())
   const [trending, setTrending] = useState<Track[]>([])
   const [playlists, setPlaylists] = useState<Playlist[]>([])
@@ -1156,7 +1210,7 @@ function HomeView() {
                 <div className="hmhero__actions">
                   <button
                     className="hmhero__play"
-                    onClick={() => (heroPlaying ? togglePlay() : playContext(trending, hero.id))}
+                    onClick={() => (heroPlaying ? togglePlay() : playContext(trending, hero.id, 'Trending'))}
                   >
                     {heroPlaying ? (
                       <Pause size={18} fill="#fff" />
@@ -1249,7 +1303,7 @@ function HomeView() {
                   <button
                     key={t.id}
                     className={`plrow ${cur ? 'is-current' : ''}`}
-                    onClick={() => (cur ? togglePlay() : playContext(trending, t.id))}
+                    onClick={() => (cur ? togglePlay() : playRadio(t))}
                   >
                     <span className="plrow__num">{String(i + 1).padStart(2, '0')}</span>
                     <Cover src={t.artwork} alt={t.title} className="plrow__art" />
@@ -2212,7 +2266,7 @@ function RadioView() {
             <button
               key={s.id}
               className={`radiocard ${cur ? 'is-current' : ''}`}
-              onClick={() => playTrack(s, [s])}
+              onClick={() => playTrack(s, [s], 'Live radio')}
             >
               <Cover src={s.artwork} alt={s.title} className="radiocard__art" />
               <span className="radiocard__meta">
@@ -2971,7 +3025,7 @@ function CloudHistory() {
       <button
         className="btn-ghost"
         style={{ marginTop: 10 }}
-        onClick={() => playContext(tracks, tracks[0]?.id)}
+        onClick={() => playContext(tracks, tracks[0]?.id, 'Listening history')}
       >
         <Play size={14} fill="currentColor" /> Play all
       </button>
@@ -3064,7 +3118,7 @@ function LibraryTransfer() {
 
 function AccountView() {
   const { user, logout, rename, openAuth } = useAuth()
-  const { liked, recent, getStats, playContext } = usePlayer()
+  const { liked, recent, getStats, playRadio } = usePlayer()
   const { navigate, setQuery } = useNav()
   const [stats, setStats] = useState(() => getStats())
   const [editing, setEditing] = useState(false)
@@ -3233,7 +3287,7 @@ function AccountView() {
           <div className="section__head">
             <h2>Your favourite song</h2>
           </div>
-          <button className="fav" onClick={() => playContext([fav.track], fav.track.id)}>
+          <button className="fav" onClick={() => playRadio(fav.track)}>
             <Cover src={fav.track.artwork} alt={fav.track.title} className="fav__art" />
             <div className="fav__meta">
               <span className="fav__title">{fav.track.title}</span>
@@ -3279,13 +3333,13 @@ function AccountView() {
               <div
                 className="trow"
                 key={x.track.id}
-                onDoubleClick={() => playContext([x.track], x.track.id)}
+                onDoubleClick={() => playRadio(x.track)}
               >
                 <div className="trow__index">
                   <span className="trow__num">{i + 1}</span>
                   <button
                     className="trow__play"
-                    onClick={() => playContext([x.track], x.track.id)}
+                    onClick={() => playRadio(x.track)}
                     aria-label="Play"
                   >
                     <Play size={13} fill="currentColor" />
@@ -3770,12 +3824,30 @@ function QueueList() {
   } = usePlayer()
   const dragIdx = useRef<number | null>(null)
   const contextNext = queue.slice(index + 1)
+  const { playSource, autoplay } = usePlayer()
 
   if (!currentTrack && !userQueue.length && !contextNext.length)
     return <div className="queuepanel__empty">Your queue is empty. Play something to begin.</div>
 
   return (
     <>
+      {currentTrack && playSource && (playSource.kind === 'radio' || playSource.label) && (
+        <div className={`queuepanel__source ${playSource.kind === 'radio' ? 'is-radio' : ''}`}>
+          {playSource.kind === 'radio' ? <Radio size={14} /> : <ListMusic size={14} />}
+          <span>
+            {playSource.kind === 'radio' ? (
+              <>
+                Radio based on <b>{playSource.label}</b>
+                {!autoplay && <i> · autoplay is off</i>}
+              </>
+            ) : (
+              <>
+                Playing from <b>{playSource.label}</b>
+              </>
+            )}
+          </span>
+        </div>
+      )}
       {currentTrack && (
         <>
           <div className="queuepanel__label">Now playing</div>
@@ -3907,7 +3979,9 @@ function ExtrasMenu({ onClose }: { onClose: () => void }) {
             <span className="switch__sl" />
           </label>
         </div>
-        <div className="exmenu__note">Keep playing similar songs when the queue ends.</div>
+        <div className="exmenu__note">
+          Follow a song with similar ones, and keep playing when a playlist ends.
+        </div>
       </div>
 
       <div className="exmenu__sec">
@@ -4405,7 +4479,7 @@ function Player() {
 
 function RightRail() {
   const { navigate } = useNav()
-  const { recent, recentAt, playContext } = usePlayer()
+  const { recent, recentAt, playRadio } = usePlayer()
   const [featured, setFeatured] = useState<Playlist | null>(null)
 
   useEffect(() => {
@@ -4457,7 +4531,7 @@ function RightRail() {
         <div className="played">
           {recent.length === 0 && <div className="played__empty">Nothing played yet.</div>}
           {recent.slice(0, 4).map((t) => (
-            <button key={t.id} className="played__item" onClick={() => playContext(recent, t.id)}>
+            <button key={t.id} className="played__item" onClick={() => playRadio(t)}>
               <Cover src={t.artwork} alt={t.title} className="played__art" />
               <span className="played__meta">
                 <span className="played__title" title={t.title}>
@@ -4507,9 +4581,62 @@ function RightRail() {
 
 /* ---------------------------------------------------------------- center */
 
+// Which pages are collections (play in their own order) and what to call them.
+// Any view not listed here is a discovery page, where picking a song starts a
+// radio. Podcasts are a collection: an episode is followed by the next episode.
+function collectionLabel(view: View, playlistName: (id: string) => string): string | null {
+  switch (view.type) {
+    case 'library':
+      return 'Liked Songs'
+    case 'myplaylist':
+      return playlistName(view.id) || 'Your playlist'
+    case 'shared':
+      return 'Shared playlist'
+    case 'playlist':
+      return 'Playlist'
+    case 'artist':
+      return view.name
+    case 'mix':
+      return 'Made for you'
+    case 'local':
+      return 'Local files'
+    case 'podcasts':
+      return 'Podcasts'
+    case 'recap':
+      return 'Your top songs'
+    default:
+      return null
+  }
+}
+
+// Names for the discovery pages, used when their "play all" button is pressed.
+function discoveryLabel(view: View): string {
+  switch (view.type) {
+    case 'genre':
+    case 'station':
+      return view.name
+    case 'hindi':
+      return 'Bollywood'
+    case 'hollywood':
+      return 'Hollywood'
+    case 'search':
+      return 'Search results'
+    default:
+      return ''
+  }
+}
+
 function CenterColumn() {
   const { view, back, forward, canBack, canForward } = useNav()
+  const { playlists } = usePlaylists()
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const playMode = useMemo<PlayMode>(() => {
+    const label = collectionLabel(view, (id) => playlists.find((p) => p.id === id)?.name || '')
+    return label === null
+      ? { mode: 'radio', label: discoveryLabel(view) }
+      : { mode: 'collection', label }
+  }, [view, playlists])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
@@ -4587,7 +4714,7 @@ function CenterColumn() {
         </button>
       </div>
       <div className="center__scroll" ref={scrollRef}>
-        {body}
+        <PlayModeContext.Provider value={playMode}>{body}</PlayModeContext.Provider>
       </div>
       <Player />
     </section>
@@ -4782,15 +4909,15 @@ function MobileNav() {
 // the person clicked a play button, so a confirmation step would be friction.
 // Renders nothing; it is behaviour, not UI.
 function TrackLinkHandler() {
-  const { playTrack } = usePlayer()
-  const playRef = useRef(playTrack)
-  playRef.current = playTrack
+  const { playRadio } = usePlayer()
+  const playRef = useRef(playRadio)
+  playRef.current = playRadio
 
   useEffect(
     () =>
       watchTrackLinks((ref) => {
         void resolveTrackRef(ref).then((t) => {
-          if (t) playRef.current(t, [t])
+          if (t) playRef.current(t)
           clearTrackRefFromUrl()
         })
       }),

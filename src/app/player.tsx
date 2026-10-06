@@ -16,21 +16,10 @@ import {
   cloudRecordPlay,
   cloudRemoveLike,
 } from '../lib/cloud'
-import { fetchTrending } from '../lib/audius'
-import { BOLLYWOOD_TRACKS } from '../lib/bollywood'
+import { canStartRadio, recommendFor } from '../lib/recommend'
 import { pushPresence, clearPresence } from '../lib/discord'
 import { onMediaControl, pushNowPlaying } from '../lib/taskbar'
 import { recordPlay } from '../lib/playlog'
-
-// Fisher–Yates; used to seed autoplay radio from the baked catalog.
-function shuffled<T>(arr: T[]): T[] {
-  const a = arr.slice()
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
 
 declare global {
   interface Window {
@@ -74,6 +63,20 @@ function dayKey(d = new Date()): string {
   ).padStart(2, '0')}`
 }
 
+/**
+ * Where the current queue came from.
+ *
+ * A COLLECTION (a playlist, Liked Songs, a mix, an artist page) plays in its
+ * own order. A RADIO starts from one song picked somewhere that isn't a
+ * collection — search, Home, a genre lane — and fills the queue with related
+ * songs instead of with whatever else happened to be listed around it.
+ */
+export interface PlaySource {
+  kind: 'collection' | 'radio'
+  /** The collection's name, or the song a radio is based on. */
+  label: string
+}
+
 export interface SleepState {
   endsAt: number | null // wall-clock ms for a timed sleep
   endOfTrack: boolean // stop when the current track ends
@@ -102,10 +105,13 @@ interface PlayerState {
   sleep: SleepState
   canTuneAudio: boolean // current track supports crossfade (audio element)
   autoplay: boolean // keep playing similar songs when the queue ends
+  playSource: PlaySource | null
 }
 
 interface PlayerActions {
-  playTrack: (track: Track, context?: Track[]) => void
+  playTrack: (track: Track, context?: Track[], label?: string) => void
+  /** Play one song and follow it with related songs. */
+  playRadio: (track: Track) => void
   togglePlay: () => void
   next: () => void
   prev: () => void
@@ -116,7 +122,7 @@ interface PlayerActions {
   cycleRepeat: () => void
   toggleLike: (track: Track) => void
   isLiked: (id: string) => boolean
-  playContext: (tracks: Track[], startId?: string) => void
+  playContext: (tracks: Track[], startId?: string, label?: string) => void
   appendToContext: (tracks: Track[]) => void
   getStats: () => PlayerStats
   // queue management
@@ -204,6 +210,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [crossfade, setCrossfadeState] = useState<number>(() => load(LS.crossfade, 0))
   const [sleep, setSleep] = useState<SleepState>({ endsAt: null, endOfTrack: false })
   const [autoplay, setAutoplayState] = useState<boolean>(() => load(LS.autoplay, true))
+  const [playSource, setPlaySource] = useState<PlaySource | null>(null)
 
   const statsRef = useRef<RawStats>(
     load(LS.stats, { listenedSec: 0, plays: {}, daily: {}, tracks: {} }),
@@ -224,7 +231,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const crossfadeRef = useRef(crossfade)
   const sleepRef = useRef(sleep)
   const autoplayRef = useRef(autoplay)
-  const radioLoadingRef = useRef(false)
+  const recentRef = useRef(recent)
+  // --- song radio bookkeeping (see extendRadio) ---
+  const radioActiveRef = useRef(false) // the queue is a radio and should refill
+  const radioTokenRef = useRef(0) // bumped whenever the user starts something new
+  const radioLoadingTokenRef = useRef<number | null>(null) // token of the fetch in flight
+  const radioExtendedForRef = useRef<string | null>(null) // seed already asked about
+  const radioAdvanceRef = useRef(false) // the queue ran out while waiting on a fetch
   const shufHistRef = useRef<number[]>([]) // recently shuffled-to indices (smart shuffle)
   const handleEndedRef = useRef<() => void>(() => {})
   const advanceRef = useRef<() => void>(() => {})
@@ -240,6 +253,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => void (crossfadeRef.current = crossfade), [crossfade])
   useEffect(() => void (sleepRef.current = sleep), [sleep])
   useEffect(() => void (autoplayRef.current = autoplay), [autoplay])
+  useEffect(() => void (recentRef.current = recent), [recent])
 
   // --- YouTube IFrame engine ---------------------------------------------
   const mountRef = useRef<HTMLDivElement>(null)
@@ -547,8 +561,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [loadAndPlay, pushRecent],
   )
 
+  // Starting anything new abandons the radio that was running: a fetch still
+  // in flight must not append its songs to a queue the user has moved on from.
+  const resetRadio = useCallback(() => {
+    radioTokenRef.current++
+    radioActiveRef.current = false
+    radioExtendedForRef.current = null
+    radioAdvanceRef.current = false
+  }, [])
+
   const playTrack = useCallback(
-    (track: Track, context?: Track[]) => {
+    (track: Track, context?: Track[], label?: string) => {
+      resetRadio()
+      setPlaySource({ kind: 'collection', label: label || '' })
       const list = context && context.length ? context : [track]
       const idx = Math.max(
         0,
@@ -561,14 +586,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       loadAndPlay(list[idx] ?? track)
       pushRecent(track)
     },
-    [loadAndPlay, pushRecent],
+    [loadAndPlay, pushRecent, resetRadio],
   )
 
   const playContext = useCallback(
-    (tracks: Track[], startId?: string) => {
+    (tracks: Track[], startId?: string, label?: string) => {
       if (!tracks.length) return
       const start = startId ? tracks.find((t) => t.id === startId) ?? tracks[0] : tracks[0]
-      playTrack(start, tracks)
+      playTrack(start, tracks, label)
     },
     [playTrack],
   )
@@ -610,49 +635,93 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  // Autoplay radio: pick songs to keep the music going once the queue ends.
-  // Seeds from Audius trending (by the current track's genre) for Audius tracks,
-  // else from the baked Bollywood catalog (0 quota). Excludes what's already queued.
-  const fetchRadio = useCallback(async (): Promise<Track[]> => {
-    const seed = currentTrackRef.current
-    const exclude = new Set(queueRef.current.map((t) => t.id))
-    let recs: Track[] = []
-    try {
-      if (seed?.source === 'audius') recs = await fetchTrending(seed.genre || undefined)
-    } catch {
-      /* fall back to baked */
-    }
-    if (!recs.length) recs = shuffled(BOLLYWOOD_TRACKS).slice(0, 30)
-    return recs.filter((t) => t.id && !exclude.has(t.id)).slice(0, 25)
-  }, [])
-
-  const startRadio = useCallback(async () => {
-    if (radioLoadingRef.current) return
-    radioLoadingRef.current = true
-    setIsBuffering(true)
-    try {
-      const recs = await fetchRadio()
-      const base = queueRef.current
-      const have = new Set(base.map((t) => t.id))
-      const fresh = recs.filter((t) => !have.has(t.id))
-      if (!fresh.length) {
-        setIsBuffering(false)
-        return
+  // Song radio: add songs related to the CURRENT track to the end of the queue.
+  //
+  // Two callers. A radio refills itself in the background a few songs before it
+  // runs out (`advance` false). And when any queue reaches its end with autoplay
+  // on, playback is waiting on the result (`advance` true), so the first new
+  // song is started as soon as it arrives.
+  //
+  // The token guards against the user starting something else mid-fetch: the
+  // result of a fetch that began under an older token is dropped.
+  const extendRadio = useCallback(
+    async (advance: boolean) => {
+      const seed = currentTrackRef.current
+      if (!seed || !canStartRadio(seed)) return
+      const token = radioTokenRef.current
+      if (advance) radioAdvanceRef.current = true
+      if (radioLoadingTokenRef.current === token) return // already fetching for this queue
+      // A background refill asks once per seed; an empty answer isn't re-asked
+      // every time the index changes.
+      if (!advance && radioExtendedForRef.current === seed.id) return
+      radioExtendedForRef.current = seed.id
+      radioLoadingTokenRef.current = token
+      if (advance) setIsBuffering(true)
+      try {
+        const exclude = new Set<string>([
+          ...queueRef.current.map((t) => t.id),
+          ...recentRef.current.slice(0, 30).map((t) => t.id),
+        ])
+        const recs = await recommendFor(seed, exclude)
+        if (radioTokenRef.current !== token) return
+        const base = queueRef.current
+        const have = new Set(base.map((t) => t.id))
+        const fresh = recs.filter((t) => t.id && !have.has(t.id))
+        if (fresh.length) {
+          const updated = [...base, ...fresh]
+          queueRef.current = updated
+          setQueue(updated)
+          if (!radioActiveRef.current) {
+            // A collection ran out and has turned into a radio.
+            radioActiveRef.current = true
+            setPlaySource({ kind: 'radio', label: seed.title })
+          }
+        }
+        if (radioAdvanceRef.current) {
+          radioAdvanceRef.current = false
+          if (fresh.length) {
+            indexRef.current = base.length
+            setIndex(base.length)
+            loadAndPlay(queueRef.current[base.length])
+            pushRecent(queueRef.current[base.length])
+          } else {
+            setIsBuffering(false)
+          }
+        }
+      } catch {
+        if (radioTokenRef.current === token) setIsBuffering(false)
+      } finally {
+        if (radioLoadingTokenRef.current === token) radioLoadingTokenRef.current = null
       }
-      const updated = [...base, ...fresh]
-      queueRef.current = updated
-      setQueue(updated)
-      const startIdx = base.length
-      indexRef.current = startIdx
-      setIndex(startIdx)
-      loadAndPlay(updated[startIdx])
-      pushRecent(updated[startIdx])
-    } catch {
-      setIsBuffering(false)
-    } finally {
-      radioLoadingRef.current = false
-    }
-  }, [fetchRadio, loadAndPlay, pushRecent])
+    },
+    [loadAndPlay, pushRecent],
+  )
+
+  const playRadio = useCallback(
+    (track: Track) => {
+      resetRadio()
+      // A song that can't seed a radio (a local file, a live stream) just plays.
+      const radio = canStartRadio(track)
+      radioActiveRef.current = radio
+      setPlaySource({ kind: radio ? 'radio' : 'collection', label: radio ? track.title : '' })
+      setQueue([track])
+      setIndex(0)
+      queueRef.current = [track]
+      indexRef.current = 0
+      loadAndPlay(track)
+      pushRecent(track)
+      // With autoplay off this is a single song: it plays and stops.
+      if (radio && autoplayRef.current) void extendRadio(false)
+    },
+    [extendRadio, loadAndPlay, pushRecent, resetRadio],
+  )
+
+  // Keep a radio topped up: fetch the next batch while a few songs remain, so
+  // it never has to stop and wait.
+  useEffect(() => {
+    if (!radioActiveRef.current || !autoplayRef.current) return
+    if (queue.length - index <= 3) void extendRadio(false)
+  }, [index, queue.length, extendRadio])
 
   const next = useCallback(() => {
     cancelCrossfade()
@@ -689,13 +758,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (i >= q.length) {
       if (repeatRef.current === 'all') i = 0
       else {
-        // End of the queue — keep playing if autoplay radio is on.
-        if (autoplayRef.current) startRadio()
+        // End of the queue — keep playing related songs if autoplay is on.
+        if (autoplayRef.current) void extendRadio(true)
         return
       }
     }
     playAt(i)
-  }, [cancelCrossfade, consumeUserQueueHead, loadAndPlay, playAt, pushRecent, startRadio])
+  }, [cancelCrossfade, consumeUserQueueHead, loadAndPlay, playAt, pushRecent, extendRadio])
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -1255,7 +1324,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     sleep,
     canTuneAudio: isAudioElTrack(currentTrack),
     autoplay,
+    playSource,
     playTrack,
+    playRadio,
     playContext,
     appendToContext,
     togglePlay,
