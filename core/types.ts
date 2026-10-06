@@ -1,6 +1,9 @@
 export interface Track {
   id: string
-  source: 'audius' | 'youtube'
+  // 'local' is a file on this machine (desktop folder scan, or a browser file
+  // picker). It plays through the <audio> element like an Audius track, but is
+  // never sent to the cloud — the stream URL only means something on this device.
+  source: 'audius' | 'youtube' | 'local'
   title: string
   artist: string
   artistHandle: string
@@ -44,3 +47,7 @@ export type View =
   | { type: 'podcasts' }
   | { type: 'radio' }
   | { type: 'account' }
+  | { type: 'recap' }
+  | { type: 'mix'; id: string }
+  | { type: 'friends' }
+  | { type: 'local' }

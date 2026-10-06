@@ -77,6 +77,73 @@ export interface GuestControls {
 
 type TickPayload = { track: Track | null; positionSec: number; isPlaying: boolean }
 
+// ----------------------------------------------------------- room events ---
+//
+// Everything social about a room — chat, reactions, song requests and votes —
+// rides the same Realtime channel as the ticks, as extra broadcast events. None
+// of it touches Postgres: a room is ephemeral, and so is what is said in it.
+//
+// Requests are host-authoritative. A guest sends `request` / `vote` as an ask;
+// the host folds it into its list and broadcasts the whole list back as
+// `requests`. Guests render only what the host says, so two guests voting at
+// once can't leave the room disagreeing about the order.
+
+export type RoomEventName = 'chat' | 'react' | 'request' | 'vote' | 'requests'
+
+const ROOM_EVENTS: RoomEventName[] = ['chat', 'react', 'request', 'vote', 'requests']
+
+export interface ChatMessage {
+  id: string
+  userId: string
+  name: string
+  text: string
+  at: number
+}
+
+export interface Reaction {
+  userId: string
+  name: string
+  emoji: string
+}
+
+export interface SongRequest {
+  id: string
+  track: Track
+  /** Who asked for it. */
+  userId: string
+  name: string
+  /** User ids that voted for it — the requester counts as the first vote. */
+  votes: string[]
+}
+
+type RoomEventHandler = (event: RoomEventName, payload: unknown) => void
+
+/** The social half of a session, identical for host and guest. */
+export interface RoomEvents {
+  /** This user's id in the room, for attributing what they send. */
+  userId: string
+  /** Broadcast to everyone else. The sender does NOT receive its own event. */
+  send: (event: RoomEventName, payload: unknown) => void
+  onEvent: (cb: RoomEventHandler) => void
+}
+
+/** Wire the broadcast events on a channel. Must run before channel.subscribe(). */
+function bindRoomEvents(channel: RealtimeChannel, userId: string): RoomEvents {
+  let handler: RoomEventHandler | null = null
+  for (const event of ROOM_EVENTS) {
+    channel.on('broadcast', { event }, ({ payload }) => handler?.(event, payload))
+  }
+  return {
+    userId,
+    send: (event, payload) => {
+      channel.send({ type: 'broadcast', event, payload }).catch(() => {})
+    },
+    onEvent: (cb) => {
+      handler = cb
+    },
+  }
+}
+
 const rand = (n: number) => {
   // Link codes are the capability that guards a room, so they come from the
   // CSPRNG rather than Math.random. Ambiguous glyphs (0/O, 1/I/l) are omitted
@@ -91,7 +158,7 @@ export const newRoomCode = () => rand(8)
 
 // ---------------------------------------------------------------- hosting ---
 
-export interface HostSession {
+export interface HostSession extends RoomEvents {
   room: Room
   /** Push the current player state. Cheap to call often — ticks are throttled. */
   publish: (state: RoomState) => void
@@ -134,6 +201,7 @@ export async function hostRoom(hostName: string): Promise<HostSession | null> {
     membersCb(members)
   }
   channel.on('presence', { event: 'sync' }, readMembers)
+  const events = bindRoomEvents(channel, uid)
 
   await channel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
@@ -195,6 +263,7 @@ export async function hostRoom(hostName: string): Promise<HostSession | null> {
   }
 
   return {
+    ...events,
     room,
     publish,
     close,
@@ -238,7 +307,7 @@ export async function peekRoom(code: string): Promise<RoomPreview | null> {
   }
 }
 
-export interface GuestSession {
+export interface GuestSession extends RoomEvents {
   room: Room
   leave: () => Promise<void>
   onMembers: (cb: (members: RoomMember[]) => void) => void
@@ -342,6 +411,8 @@ export async function joinRoom(
     )
   })
 
+  const events = bindRoomEvents(channel, uid)
+
   await channel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
       await channel.track({ name: guestName, host: false })
@@ -362,6 +433,7 @@ export async function joinRoom(
   }
 
   return {
+    ...events,
     room,
     leave: async () => {
       try {

@@ -8,6 +8,8 @@
 //   3. Own the Discord Rich Presence connection and relay renderer IPC to it.
 //   4. Drive the Windows taskbar mini-player (see thumbar.cjs).
 //   5. Keep the app up to date off GitHub Releases (see updater.cjs).
+//   6. Tray icon + global hotkeys (tray.cjs), the mini player window (mini.cjs)
+//      and the local music folder scan (local-files.cjs).
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
@@ -15,6 +17,11 @@ const { pathToFileURL } = require('node:url')
 const discord = require('./discord-presence.cjs')
 const thumbar = require('./thumbar.cjs')
 const updater = require('./updater.cjs')
+const tray = require('./tray.cjs')
+const mini = require('./mini.cjs')
+// Registers the synapz-file:// scheme as a side effect, which Electron only
+// allows before the app is ready — so this require has to stay up here.
+const localFiles = require('./local-files.cjs')
 
 // Load the repo's .env in dev so DISCORD_CLIENT_ID is picked up (the backend
 // runs in a separate process, so its env doesn't reach us). No-op if absent.
@@ -40,6 +47,18 @@ const PROD_URL = `http://localhost:${BACKEND_PORT}` // backend serves UI + api
 
 let win = null
 let backend = null // http.Server
+
+// Bring the window back from wherever it is: minimized, or hidden in the tray.
+function showWindow() {
+  if (!win) {
+    // macOS keeps the app alive with no window; the tray's "Show" lands here.
+    if (app.isReady()) createWindow()
+    return
+  }
+  if (!win.isVisible()) win.show()
+  if (win.isMinimized()) win.restore()
+  win.focus()
+}
 
 // --- OAuth deep link (synapz://) ----------------------------------------
 // Google sign-in must happen in the user's real default browser (Google blocks
@@ -77,11 +96,7 @@ function deliverDeepLink(url) {
     return // not a URL we can make sense of
   }
 
-  const focus = () => {
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.focus()
-  }
+  const focus = showWindow
 
   if (host === 'listen') {
     if (!code) return
@@ -201,8 +216,18 @@ function createWindow() {
     console.error('[synapz] UI failed to load:', code, desc, url),
   )
 
+  // "Keep playing in the tray": closing hides the window instead of ending the
+  // app. Quit (tray menu, Cmd+Q, restart-to-update) still goes through.
+  win.on('close', (e) => {
+    if (tray.hidesOnClose()) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
+
   win.on('closed', () => {
     win = null
+    mini.close()
   })
 
   loadApp()
@@ -216,10 +241,7 @@ if (!app.requestSingleInstanceLock()) {
     // Windows/Linux deliver the deep link as an argv of the second launch.
     const url = argv.find((a) => typeof a === 'string' && a.startsWith(`${OAUTH_PROTOCOL}://`))
     if (url) deliverDeepLink(url)
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
+    showWindow()
   })
 
   app.whenReady().then(async () => {
@@ -242,10 +264,14 @@ if (!app.requestSingleInstanceLock()) {
       console.error('[synapz] backend failed to start:', err)
     }
 
+    localFiles.init(() => win)
     createWindow()
+    tray.init({ getWindow: () => win, showWindow, toggleMini: mini.toggle })
+    mini.init({ getWindow: () => win, showWindow })
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      if (!win) createWindow()
+      else showWindow()
     })
   })
 }
@@ -280,13 +306,27 @@ ipcMain.handle('play:consume-pending', () => {
 // The renderer asks for the current state when it mounts (a check can finish
 // before the UI is listening) and can trigger the install itself.
 ipcMain.handle('update:status', () => updater.status())
-ipcMain.on('update:restart', () => updater.restart())
+ipcMain.on('update:restart', () => {
+  // quitAndInstall closes the windows BEFORE before-quit fires, so without this
+  // close-to-tray would swallow the close and the update would never install.
+  tray.markQuitting()
+  updater.restart()
+})
 
 // --- Taskbar mini-player IPC --------------------------------------------
 // Renderer mirrors its now-playing state and the on-screen bounds of the player
 // bar; we turn those into the thumbnail toolbar + the cropped hover preview.
-ipcMain.on('media:state', (_e, s) => thumbar.update(win, s))
+// The same now-playing feed drives the tray menu and the mini player window.
+ipcMain.on('media:state', (_e, s) => {
+  thumbar.update(win, s)
+  tray.update(s)
+  mini.update(s)
+})
 ipcMain.on('media:player-rect', (_e, r) => thumbar.setPlayerRect(win, r))
+
+// --- Tray / hotkeys / mini player IPC -----------------------------------
+ipcMain.on('desktop:prefs', (_e, p) => tray.setPrefs(p))
+ipcMain.on('mini:toggle', () => mini.toggle())
 
 // --- Discord IPC from the renderer --------------------------------------
 ipcMain.on('discord:set', (_e, data) => discord.setPresence(data))

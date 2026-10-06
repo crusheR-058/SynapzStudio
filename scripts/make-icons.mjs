@@ -59,3 +59,28 @@ for (const [name, shapes] of Object.entries(GLYPHS)) {
 }
 
 console.log(`✓ wrote electron/thumbar/{${Object.keys(GLYPHS).join(',')}}.png`)
+
+// --- tray icon ----------------------------------------------------------
+// Lives under electron/ for the same reason as the thumbar glyphs: it has to be
+// inside what electron-builder ships. build/icon.png is not.
+await sharp(png).resize(32, 32).png().toFile(path.join(root, 'electron', 'tray.png'))
+console.log('✓ wrote electron/tray.png')
+
+// --- installable web app (PWA) icons ------------------------------------
+// The manifest used to list only the SVG. Chrome wants a 192 and a 512 PNG
+// before it will offer "Install", and iOS ignores SVG touch icons entirely.
+// These are committed (unlike build/), because the web build has to serve them.
+const publicDir = path.join(root, 'public')
+for (const size of [192, 512]) {
+  await sharp(png).resize(size, size).png().toFile(path.join(publicDir, `icon-${size}.png`))
+}
+// Maskable: launchers crop to their own shape, so the mark sits inside the
+// central "safe zone" on a full-bleed background instead of touching the edge.
+const BG = { r: 10, g: 10, b: 12, alpha: 1 }
+await sharp({ create: { width: 512, height: 512, channels: 4, background: BG } })
+  .composite([{ input: await sharp(png).resize(360, 360).png().toBuffer(), gravity: 'center' }])
+  .png()
+  .toFile(path.join(publicDir, 'icon-maskable-512.png'))
+// iOS draws the touch icon on black if it has transparency; flatten it first.
+await sharp(png).resize(180, 180).flatten({ background: BG }).png().toFile(path.join(publicDir, 'apple-touch-icon.png'))
+console.log('✓ wrote public/icon-{192,512}.png, icon-maskable-512.png, apple-touch-icon.png')

@@ -93,6 +93,43 @@ export async function cloudFetchHistory(limit = 40): Promise<Track[]> {
   }
 }
 
+/** One play, with when it happened — the raw material for the listening recap. */
+export interface PlayEvent {
+  track: Track
+  at: number // epoch ms
+}
+
+/**
+ * Raw play events since `sinceMs`, newest first. Unlike cloudFetchHistory this
+ * keeps repeats — a recap needs to know a song was played forty times, not just
+ * that it was played. Capped, because an all-time query on a heavy account
+ * would otherwise pull tens of thousands of jsonb rows into the browser.
+ */
+export async function cloudFetchPlayEvents(sinceMs = 0, limit = 5000): Promise<PlayEvent[]> {
+  if (!sb()) return []
+  try {
+    const out: PlayEvent[] = []
+    const PAGE = 1000 // PostgREST's default max-rows; page rather than assume more
+    for (let from = 0; from < limit; from += PAGE) {
+      let q = sb()!
+        .from('play_history')
+        .select('track, played_at')
+        .order('played_at', { ascending: false })
+        .range(from, Math.min(limit, from + PAGE) - 1)
+      if (sinceMs > 0) q = q.gte('played_at', new Date(sinceMs).toISOString())
+      const { data, error } = await q
+      if (error || !data) break
+      for (const r of data as { track: Track; played_at: string }[]) {
+        if (r.track?.id) out.push({ track: r.track, at: Date.parse(r.played_at) || 0 })
+      }
+      if (data.length < PAGE) break
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
 export async function cloudRecordPlay(track: Track): Promise<void> {
   const id = await uid()
   if (!sb() || !id) return

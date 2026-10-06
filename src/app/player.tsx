@@ -20,6 +20,7 @@ import { fetchTrending } from '../lib/audius'
 import { BOLLYWOOD_TRACKS } from '../lib/bollywood'
 import { pushPresence, clearPresence } from '../lib/discord'
 import { onMediaControl, pushNowPlaying } from '../lib/taskbar'
+import { recordPlay } from '../lib/playlog'
 
 // Fisher–Yates; used to seed autoplay radio from the baked catalog.
 function shuffled<T>(arr: T[]): T[] {
@@ -420,7 +421,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   )
 
   const pushRecent = useCallback((track: Track) => {
-    cloudRecordPlay(track) // best-effort; no-op when signed out
+    recordPlay(track) // local timestamped log — feeds the recap and the mixes
+    // A local file's stream URL is a path on this machine; it stays off the cloud.
+    if (track.source !== 'local') cloudRecordPlay(track) // best-effort; no-op when signed out
     setRecent((prev) => {
       const deduped = [track, ...prev.filter((t) => t.id !== track.id)].slice(0, 30)
       save(LS.recent, deduped)
@@ -999,8 +1002,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const updated = exists ? prev.filter((t) => t.id !== track.id) : [track, ...prev]
       save(LS.liked, updated)
       // Mirror to the cloud (best-effort; no-ops when signed out).
-      if (exists) cloudRemoveLike(track.id)
-      else cloudAddLike(track)
+      if (track.source !== 'local') {
+        if (exists) cloudRemoveLike(track.id)
+        else cloudAddLike(track)
+      }
       return updated
     })
   }, [])
@@ -1029,14 +1034,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     ;(async () => {
       if (importedForRef.current !== email) {
-        const local = load<Track[]>(LS.liked, [])
+        const local = load<Track[]>(LS.liked, []).filter((t) => t.source !== 'local')
         if (local.length) await cloudImportLikes(local)
         importedForRef.current = email
       }
       const cloud = await cloudFetchLikes()
       if (cancelled) return
-      setLiked(cloud)
-      save(LS.liked, cloud)
+      // Liked local files never went to the cloud, so the cloud list alone would
+      // silently drop them — keep them alongside it.
+      const merged = [...load<Track[]>(LS.liked, []).filter((t) => t.source === 'local'), ...cloud]
+      setLiked(merged)
+      save(LS.liked, merged)
     })()
     return () => {
       cancelled = true
@@ -1154,8 +1162,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (action === 'playpause') togglePlay()
         else if (action === 'next') next()
         else if (action === 'prev') prev()
+        else if (action === 'volup') setVolume(volLevelRef.current + 5)
+        else if (action === 'voldown') setVolume(volLevelRef.current - 5)
       }),
-    [togglePlay, next, prev],
+    [togglePlay, next, prev, setVolume],
   )
 
   // Discord Rich Presence (desktop app only — no-op on the web build). Fires on

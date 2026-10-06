@@ -20,6 +20,7 @@ import {
   Film,
   Gauge,
   GripVertical,
+  HardDrive,
   Headphones,
   Heart,
   Home,
@@ -53,6 +54,7 @@ import {
   Lock,
   Share2,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Upload,
   UserPlus,
@@ -113,6 +115,19 @@ import {
   watchInvites,
   DOWNLOAD_URL,
 } from '../lib/invite'
+import { RecapView } from './features/Recap'
+import { MadeForYou, MixView } from './features/Mixes'
+import { ActivityBeacon, FriendsView, friendRefFromUrl } from './features/Friends'
+import { LocalFilesView } from './features/LocalFiles'
+import { ReactionOverlay, RoomPanel, RoomPanelButton } from './features/Room'
+import {
+  DesktopPrefsSync,
+  DesktopSettings,
+  InstallButton,
+  LastfmSettings,
+  MiniPlayerRow,
+  Scrobbler,
+} from './features/Extras'
 
 /* ------------------------------------------------------------------ utils */
 
@@ -132,7 +147,7 @@ function fmtCount(n?: number): string {
   return String(n)
 }
 
-function fmtAgo(ts?: number): string {
+export function fmtAgo(ts?: number): string {
   if (!ts) return ''
   const s = Math.max(1, Math.floor((Date.now() - ts) / 1000))
   if (s < 60) return `${s} sec ago`
@@ -148,7 +163,7 @@ function fill(pct: number): CSSProperties {
   return { ['--fill' as string]: `${pct}%` }
 }
 
-function fmtDuration(totalSec: number): string {
+export function fmtDuration(totalSec: number): string {
   const sec = Math.floor(totalSec || 0)
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
@@ -357,7 +372,7 @@ interface NavValue {
 }
 
 const NavContext = createContext<NavValue | null>(null)
-const useNav = () => {
+export const useNav = () => {
   const ctx = useContext(NavContext)
   if (!ctx) throw new Error('useNav must be inside NavProvider')
   return ctx
@@ -390,6 +405,14 @@ function sectionForView(v: View): string {
       return 'radio'
     case 'account':
       return 'account'
+    case 'recap':
+      return 'recap'
+    case 'friends':
+      return 'friends'
+    case 'local':
+      return 'local'
+    case 'mix':
+      return 'home'
     default:
       return ''
   }
@@ -403,6 +426,8 @@ function initialView(): { view: View; section: string } {
   } catch {
     /* noop */
   }
+  // A friend invite (…/?friend=<id>) opens on the Friends tab, which offers to add them.
+  if (friendRefFromUrl()) return { view: { type: 'friends' }, section: 'friends' }
   return { view: { type: 'home' }, section: 'home' }
 }
 
@@ -486,7 +511,7 @@ function UIProvider({ children }: { children: ReactNode }) {
 
 /* --------------------------------------------------------------- visuals */
 
-function Cover({
+export function Cover({
   src,
   fallbackSrc,
   alt,
@@ -567,7 +592,7 @@ function ErrorState({ message }: { message: string }) {
 
 /* --------------------------------------------------------------- big play */
 
-function BigPlay({ tracks, size = 52 }: { tracks: Track[]; size?: number }) {
+export function BigPlay({ tracks, size = 52 }: { tracks: Track[]; size?: number }) {
   const { playContext, currentTrack, isPlaying, togglePlay, queue } = usePlayer()
   // "Is this button's list the one currently playing?" — compare by content, not
   // just length: a length check mis-fires between two equal-length lists that
@@ -654,6 +679,10 @@ function AddToPlaylistButton({
     await createPlaylist(n, track)
     setOpen(false)
   }
+
+  // Playlists sync to the cloud and can be shared; a local file's path would be
+  // meaningless (and a little revealing) anywhere but on this machine.
+  if (track.source === 'local') return null
 
   return (
     <>
@@ -897,7 +926,7 @@ const TrackRow = memo(function TrackRow({
 
 const TLIST_PAGE = 60
 
-function TrackList({
+export function TrackList({
   tracks,
   context,
   onRemove,
@@ -1159,6 +1188,8 @@ function HomeView() {
               <TrackCard key={t.id} track={t} context={trending} />
             ))}
           </div>
+
+          <MadeForYou />
 
           {recent.length > 0 && (
             <Section title="Jump back in" onShowAll={() => navigate({ type: 'library' }, 'song')}>
@@ -3032,7 +3063,7 @@ function LibraryTransfer() {
 }
 
 function AccountView() {
-  const { user, logout, rename } = useAuth()
+  const { user, logout, rename, openAuth } = useAuth()
   const { liked, recent, getStats, playContext } = usePlayer()
   const { navigate, setQuery } = useNav()
   const [stats, setStats] = useState(() => getStats())
@@ -3085,7 +3116,11 @@ function AccountView() {
         )}
         <div className="acct-meta">
           <span className="eyebrow">Profile</span>
-          {editing ? (
+          {!user ? (
+            // Signed out, this page is still where the device settings live
+            // (theme, tray, hotkeys, Last.fm) and where local stats show.
+            <h1 className="acct-name">Guest</h1>
+          ) : editing ? (
             <div className="acct-edit">
               <input
                 value={nameVal}
@@ -3115,24 +3150,36 @@ function AccountView() {
               </button>
             </h1>
           )}
-          <div className="acct-tags">
-            <span className="acct-tag">
-              <Mail size={12} /> {user?.email}
-            </span>
-            <span className="acct-tag">via {user?.provider === 'google' ? 'Google' : 'Guest'}</span>
-            <span className="acct-tag">Member since {memberSince}</span>
-          </div>
+          {user ? (
+            <div className="acct-tags">
+              <span className="acct-tag">
+                <Mail size={12} /> {user.email}
+              </span>
+              <span className="acct-tag">via {user.provider === 'google' ? 'Google' : 'Guest'}</span>
+              <span className="acct-tag">Member since {memberSince}</span>
+            </div>
+          ) : (
+            <div className="acct-tags">
+              <span className="acct-tag">Sign in to sync likes, playlists and history</span>
+            </div>
+          )}
         </div>
         <div className="acct-actions">
-          <button
-            className="btn-ghost"
-            onClick={() => {
-              logout()
-              navigate({ type: 'home' }, 'home')
-            }}
-          >
-            <LogOut size={15} /> Log out
-          </button>
+          {user ? (
+            <button
+              className="btn-ghost"
+              onClick={() => {
+                logout()
+                navigate({ type: 'home' }, 'home')
+              }}
+            >
+              <LogOut size={15} /> Log out
+            </button>
+          ) : (
+            <button className="btn-solid" onClick={() => openAuth('login')}>
+              <LogIn size={15} /> Sign in
+            </button>
+          )}
         </div>
       </header>
 
@@ -3143,11 +3190,39 @@ function AccountView() {
         <StatCard icon={<Heart size={18} />} label="Liked songs" value={liked.length} />
       </div>
 
+      <div className="quicklinks">
+        <button className="quicklink" onClick={() => navigate({ type: 'recap' })}>
+          <Sparkles size={18} />
+          <span>
+            <b>Your Recap</b>
+            <i>Top songs, artists and streaks</i>
+          </span>
+        </button>
+        <button className="quicklink" onClick={() => navigate({ type: 'friends' })}>
+          <Users size={18} />
+          <span>
+            <b>Friends</b>
+            <i>See what they’re playing</i>
+          </span>
+        </button>
+        <button className="quicklink" onClick={() => navigate({ type: 'local' })}>
+          <HardDrive size={18} />
+          <span>
+            <b>Local files</b>
+            <i>Play music from this device</i>
+          </span>
+        </button>
+      </div>
+
       <ThemePicker />
 
       <VibePicker />
 
       <DiscordSettings />
+
+      <DesktopSettings />
+
+      <LastfmSettings />
 
       <CloudHistory />
 
@@ -3275,6 +3350,9 @@ const MENU_ITEMS: { icon: typeof Home; label: string; section: string; view: Vie
   { icon: Film, label: 'Hollywood', section: 'hollywood', view: { type: 'hollywood' } },
   { icon: Mic2, label: 'Artists', section: 'artists', view: { type: 'artists' } },
   { icon: Podcast, label: 'Podcasts', section: 'podcasts', view: { type: 'podcasts' } },
+  { icon: Users, label: 'Friends', section: 'friends', view: { type: 'friends' } },
+  { icon: HardDrive, label: 'Local files', section: 'local', view: { type: 'local' } },
+  { icon: Sparkles, label: 'Your Recap', section: 'recap', view: { type: 'recap' } },
 ]
 
 function NavItem({
@@ -3443,6 +3521,8 @@ function Sidebar() {
 
       <div className="sidebar__spacer" />
 
+      <InstallButton />
+
       {!isDesktop() && (
         <a
           className="sb-getapp"
@@ -3487,6 +3567,12 @@ function Sidebar() {
         </div>
       ) : (
         <div className="authcta">
+          <button
+            className={`authcta__settings ${section === 'account' ? 'on' : ''}`}
+            onClick={() => navigate({ type: 'account' }, 'account')}
+          >
+            <SlidersHorizontal size={16} /> Settings &amp; stats
+          </button>
           <button className="authcta__signup" onClick={() => openAuth('signup')}>
             <UserPlus size={16} /> Sign up
           </button>
@@ -3891,6 +3977,8 @@ function ExtrasMenu({ onClose }: { onClose: () => void }) {
           aria-label="Crossfade seconds"
         />
       </div>
+
+      <MiniPlayerRow onOpen={onClose} />
 
       {!canTuneAudio && (
         <div className="exmenu__locked">
@@ -4474,6 +4562,18 @@ function CenterColumn() {
     case 'account':
       body = <AccountView />
       break
+    case 'recap':
+      body = <RecapView />
+      break
+    case 'mix':
+      body = <MixView id={view.id} />
+      break
+    case 'friends':
+      body = <FriendsView />
+      break
+    case 'local':
+      body = <LocalFilesView />
+      break
   }
 
   return (
@@ -4619,7 +4719,7 @@ function MobileMiniPlayer() {
 // Bottom tab bar (phones) — primary navigation.
 function MobileNav() {
   const { section, navigate, setQuery } = useNav()
-  const { user, openAuth } = useAuth()
+  const { user } = useAuth()
   return (
     <nav className="mnav">
       <button
@@ -4662,7 +4762,7 @@ function MobileNav() {
       </button>
       <button
         className={`mnav__tab ${section === 'account' ? 'on' : ''}`}
-        onClick={() => (user ? navigate({ type: 'account' }, 'account') : openAuth('login'))}
+        onClick={() => navigate({ type: 'account' }, 'account')}
       >
         {user?.picture ? (
           <img className="mnav__ava" src={user.picture} alt={user.name} />
@@ -4775,6 +4875,8 @@ function ListenBar() {
           {copied ? 'Link copied' : 'Copy invite link'}
         </button>
       )}
+
+      <RoomPanelButton />
 
       {error && <span className="listenbar__err">{error}</span>}
 
@@ -4941,6 +5043,11 @@ function Shell() {
         <AuthModal />
         <ListenInvite />
         <TrackLinkHandler />
+        <RoomPanel />
+        <ReactionOverlay />
+        <Scrobbler />
+        <ActivityBeacon />
+        <DesktopPrefsSync />
       </div>
       {error && <div className="toast">{error}</div>}
       <UpdateNotice />

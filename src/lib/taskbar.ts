@@ -11,13 +11,15 @@
 
 import type { Track } from './types'
 
-export type MediaAction = 'prev' | 'playpause' | 'next'
+export type MediaAction = 'prev' | 'playpause' | 'next' | 'volup' | 'voldown'
 
 interface NowPlaying {
   hasTrack: boolean
   isPlaying: boolean
   title: string
   artist: string
+  /** For the mini player window; the taskbar and tray ignore it. */
+  artwork: string
 }
 
 interface Rect {
@@ -48,10 +50,14 @@ export function pushNowPlaying(track: Track | null, opts: { isPlaying: boolean }
     isPlaying: !!track && opts.isPlaying,
     title: track?.title || '',
     artist: track?.artist || '',
+    artwork: track?.artwork || '',
   })
 }
 
-/** Subscribe to clicks on the taskbar transport buttons. Returns an unsubscribe. */
+/**
+ * Subscribe to transport actions from the shell — taskbar buttons, the tray
+ * menu, the mini player and the global hotkeys. Returns an unsubscribe.
+ */
 export function onMediaControl(cb: (action: MediaAction) => void): () => void {
   const api = bridge()
   if (!api?.isDesktop || !api.onMediaControl) return noop

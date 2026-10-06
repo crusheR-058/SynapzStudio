@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Local, trusted page: artwork is the only remote resource it loads. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <title>Synapz Mini Player</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #121214;
+        color: #fff;
+        font: 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;
+        user-select: none;
+      }
+      /* The whole card drags the window; controls opt back out below. */
+      .mini {
+        -webkit-app-region: drag;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        height: 100%;
+        padding: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .art {
+        flex: 0 0 auto;
+        width: 86px;
+        height: 86px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #ff3b4e, #7a0915) center / cover no-repeat;
+      }
+      .body {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .title,
+      .artist {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .title {
+        font-weight: 700;
+        font-size: 14px;
+        padding-right: 44px;
+      }
+      .artist {
+        color: #a0a0a8;
+        margin-top: 2px;
+      }
+      .ctl {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 10px;
+      }
+      button {
+        -webkit-app-region: no-drag;
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      button:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      #play {
+        background: #fff;
+        color: #0f1115;
+      }
+      #play:hover:not(:disabled) {
+        background: #e8e8ea;
+      }
+      .win {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: flex;
+        gap: 2px;
+      }
+      .win button {
+        width: 22px;
+        height: 22px;
+        color: #a0a0a8;
+      }
+      svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
+      }
+      .win svg {
+        width: 12px;
+        height: 12px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="mini">
+      <div class="art" id="art"></div>
+      <div class="body">
+        <div class="title" id="title">Nothing playing</div>
+        <div class="artist" id="artist">Synapz Music</div>
+        <div class="ctl">
+          <button id="prev" aria-label="Previous" title="Previous">
+            <svg viewBox="0 0 16 16"><rect x="3" y="3" width="2" height="10" rx=".5" /><path d="M13 3.4 6 8l7 4.6z" /></svg>
+          </button>
+          <button id="play" aria-label="Play or pause" title="Play / pause">
+            <svg viewBox="0 0 16 16" id="playIcon"><path d="M4.8 3.2 13 8l-8.2 4.8z" /></svg>
+          </button>
+          <button id="next" aria-label="Next" title="Next">
+            <svg viewBox="0 0 16 16"><path d="M3 3.4 10 8l-7 4.6z" /><rect x="11" y="3" width="2" height="10" rx=".5" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="win">
+      <button id="expand" aria-label="Open Synapz Music" title="Open Synapz Music">
+        <svg viewBox="0 0 12 12"><path d="M4.5 1.5h6v6M10.5 1.5 2 10" /></svg>
+      </button>
+      <button id="close" aria-label="Close mini player" title="Close mini player">
+        <svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+      </button>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id)
+      const PLAY = '<path d="M4.8 3.2 13 8l-8.2 4.8z" />'
+      const PAUSE =
+        '<rect x="4" y="3.2" width="2.9" height="9.6" rx=".5" /><rect x="9.1" y="3.2" width="2.9" height="9.6" rx=".5" />'
+
+      function render(s) {
+        if (!s) return
+        $('title').textContent = s.hasTrack ? s.title : 'Nothing playing'
+        $('artist').textContent = s.hasTrack ? s.artist : 'Synapz Music'
+        // Only http(s) artwork is ever painted; anything else keeps the gradient.
+        $('art').style.backgroundImage =
+          s.hasTrack && /^https?:\/\//.test(s.artwork)
+            ? 'url("' + s.artwork.replace(/["\\\s]/g, '') + '")'
+            : ''
+        $('playIcon').innerHTML = s.isPlaying ? PAUSE : PLAY
+        for (const id of ['prev', 'play', 'next']) $(id).disabled = !s.hasTrack
+      }
+
+      $('prev').onclick = () => window.mini.control('prev')
+      $('play').onclick = () => window.mini.control('playpause')
+      $('next').onclick = () => window.mini.control('next')
+      $('close').onclick = () => window.mini.close()
+      $('expand').onclick = () => window.mini.expand()
+
+      window.mini.onState(render)
+      window.mini.getState().then(render)
+    </script>
+  </body>
+</html>

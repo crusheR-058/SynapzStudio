@@ -51,6 +51,16 @@ contextBridge.exposeInMainWorld('synapz', {
     return () => ipcRenderer.removeListener('media:control', listener)
   },
 
+  // Tray, global hotkeys and the mini player window.
+  setDesktopPrefs: (prefs) => ipcRenderer.send('desktop:prefs', prefs),
+  toggleMiniPlayer: () => ipcRenderer.send('mini:toggle'),
+
+  // Local music library: the folder is chosen in an OS dialog owned by the main
+  // process, so the page can ask for a scan but can never name a path to read.
+  localScan: () => ipcRenderer.invoke('local:scan'),
+  localAddFolder: () => ipcRenderer.invoke('local:add-folder'),
+  localRemoveFolder: (root) => ipcRenderer.invoke('local:remove-folder', root),
+
   // OAuth: open the provider URL in the system browser; receive the synapz://
   // deep-link callback back from the main process.
   openOAuth: (url) => ipcRenderer.send('oauth:open-external', url),

@@ -110,7 +110,8 @@ export function pushPresence(
     durationSec: track.duration || 0,
     positionSec: Math.max(0, Math.floor(opts.positionSec || 0)),
     isPlaying: opts.isPlaying,
-    playUrl: trackUrl(track),
+    // A local file has no link anyone else could open.
+    playUrl: track.source === 'local' ? undefined : trackUrl(track),
     listenUrl: listenRoomCode ? roomUrl(listenRoomCode) : undefined,
   })
 }
