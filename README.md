@@ -4,10 +4,12 @@
 
 # Synapz Music
 
-A Spotify-style music streaming web app built with **React + TypeScript + Vite**.
-Unlike a mockup, it plays **real, full-length songs** — it streams from the
-[Audius](https://audius.org) network, a free and legal decentralized music
-platform. No API key, no login, no backend.
+A Spotify-style music streaming app built with **React + TypeScript + Vite**. It
+runs in the browser (installable as a PWA) and as a desktop app for Windows and
+macOS. Unlike a mockup, it plays **real, full-length songs**.
+
+Listening needs no account. Signing in (Clerk) is optional and adds cloud sync —
+likes, playlists and history across devices — plus friends and Listen Along.
 
 Two sources power playback:
 
@@ -33,10 +35,11 @@ Singh, Romantic, Punjabi, Lo-Fi Hindi, Party) stream full songs from YouTube.
 Regular search also shows a "From YouTube" section. **No setup or key required**,
 as long as the dev server is running.
 
-How it works: `vite.config.ts` adds two dev-server routes that call `yt-dlp`:
-
-- `GET /yt/search?q=…` → YouTube search results (id, title, channel, duration).
-- `GET /yt/stream?id=…` → 302-redirect to a fresh direct audio URL (cached).
+How it works: the local backend ([`server/index.mjs`](server/index.mjs)) exposes
+`GET /yt/search?q=…`, which shells out to `yt-dlp` for search results (id, title,
+channel, duration). Playback goes through YouTube's own IFrame player. On the
+hosted site the same route is a serverless function backed by the YouTube Data
+API.
 
 ### Requirements
 
@@ -44,8 +47,8 @@ How it works: `vite.config.ts` adds two dev-server routes that call `yt-dlp`:
   (macOS/Linux). Download it from the
   [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases/latest).
   Update occasionally (`yt-dlp -U`) since YouTube changes break old versions.
-- The helper is **dev-only** (it lives in the Vite dev server). A static
-  production build won't have it.
+- The helper runs wherever the local backend does: `npm run dev` and the desktop
+  app, which bundles both.
 
 > Note: extracting YouTube audio this way is a gray area under YouTube's Terms.
 > It's intended here for **personal, local listening**. An optional, fully
@@ -65,8 +68,7 @@ npm run dev      # starts BOTH the web app (5173) and the backend (8787)
 - **web** — Vite dev server on http://localhost:5173 (proxies `/api` and `/yt`
   to the backend).
 - **api** — the Express backend (`server/index.mjs`) on http://localhost:8787:
-  accounts (Google + demo login), premium membership, and keyless YouTube search
-  (via `yt-dlp`).
+  keyless YouTube search (via `yt-dlp`) and Spotify playlist import.
 
 (Run them separately with `npm run dev:web` / `npm run dev:api` if you prefer.)
 
@@ -170,51 +172,78 @@ automatically on the next release:
 Base64-encode a cert with `base64 -w0 cert.pfx` (Linux) or
 `base64 -i cert.pfx` (macOS), and paste the output as the secret value.
 
-## Accounts, login & Premium
+## Accounts & cloud sync
 
-- On first load you'll see a **login screen**. Click **Continue as guest** to jump
-  straight in, or **Continue with Google**.
-- **Google Sign-In**: real Google login activates automatically once you set
-  `VITE_GOOGLE_CLIENT_ID` (see `.env.example`). Until then the Google button signs
-  you in with a demo account. Sessions are cookie-based; users persist to
-  `server/data.json`.
-- **Premium** (sidebar → *Premium*): pick a plan and "upgrade". This is a **demo
-  checkout — no real payment** is taken; it just flips your account to Premium so
-  you can see the gold badge and the Premium experience. Real billing would need
-  Stripe + keys + a backend webhook.
+- **No login wall.** Everything plays signed out; likes, playlists, stats and
+  settings are kept in the browser.
+- **Sign-in is Clerk** (`VITE_CLERK_PUBLISHABLE_KEY`). The key is baked in at
+  build time, so it must be set wherever a build runs: `.env.local` for dev,
+  the Vercel project for the website, and the `VITE_CLERK_PUBLISHABLE_KEY`
+  repository variable for desktop releases. A build without it cannot load —
+  the release workflow refuses to build one.
+- **Data is Supabase** (Postgres + Row-Level Security). See
+  [`SUPABASE.md`](SUPABASE.md) for setup, then run, in order:
+  [`supabase/schema.sql`](supabase/schema.sql),
+  [`supabase/clerk-migration.sql`](supabase/clerk-migration.sql) and
+  [`supabase/social.sql`](supabase/social.sql) (friends).
 
 ## Features
 
-- **Real streaming** — full songs via the Audius stream API (`<audio>` element).
-- **Home** — featured hero, "Good morning/afternoon" quick grid, trending tracks,
-  popular playlists, and genre tiles, all pulled live.
-- **Search** — debounced live search across tracks & playlists, with a "Top
-  result" card and browse-all genre grid.
-- **Playlists & genres** — open any playlist or genre into a full track list with
-  a big Play button.
-- **Player engine** — play/pause, next/prev, shuffle, repeat (off → all → one),
-  seek/scrub, volume + mute, and a real progress bar driven by audio events.
-- **Library** — Liked Songs and Recently Played, both persisted to
-  `localStorage`.
-- **Extras** — OS media-key support (Media Session API), space-bar play/pause,
-  buffering spinner, now-playing equalizer animation, and graceful loading /
-  error / empty states.
+**Listening**
+- **Real streaming** — Audius tracks through `<audio>`, YouTube through the
+  IFrame player; Bollywood, Hollywood, podcasts, radio and language stations.
+- **Player** — queue, shuffle, repeat, seek, crossfade, playback speed, sleep
+  timer, autoplay radio, synced lyrics with karaoke mode, media keys.
+- **Local files** — play music from your own machine next to the streams. The
+  desktop app remembers a music folder; the browser can open one for the session.
+
+**Made for you**
+- **Daily mixes** — auto-playlists built from your own listening (artist mixes,
+  On Repeat, Rediscover, Discovery), refreshed each day.
+- **Recap** — top songs and artists, listening by hour, streaks and a listening
+  style for the month, year or all time, with a shareable image.
+
+**Together**
+- **Listen Along** — host a session and friends hear the same song in sync, with
+  a room **chat**, emoji **reactions**, and **song requests** guests can vote on.
+- **Friends** — add each other by link, see what friends are playing, and join
+  their session in one click. Activity is only visible between people who have
+  both added each other.
+- **Shared playlists**, Spotify playlist import, and Discord Rich Presence.
+- **Last.fm scrobbling** — connect in Settings. Needs a free Last.fm API key and
+  secret, either pasted in the app or baked into the build with
+  `VITE_LASTFM_API_KEY` / `VITE_LASTFM_API_SECRET`.
+
+**Desktop app**
+- **Tray icon** with transport controls and an optional "keep playing in the
+  tray" when the window is closed.
+- **Global hotkeys** — `Ctrl+Alt+Space` play/pause, `Ctrl+Alt+←/→` previous/next,
+  `Ctrl+Alt+↑/↓` volume, `Ctrl+Alt+M` mini player.
+- **Mini player** — a small always-on-top window with the artwork and controls.
+- Taskbar thumbnail controls and automatic updates.
+
+**Web app**
+- **Installable (PWA)** — a service worker caches the app shell, so it installs
+  to the home screen and opens offline. Music itself is always streamed.
 
 ## Project structure
 
 ```
 src/
-  main.tsx            entry
+  main.tsx              entry
   app/
-    App.tsx           all UI: layout, sidebar, top nav, views, now-playing bar
-    player.tsx        PlayerProvider — audio engine, queue, persistence
-  lib/
-    audius.ts         Audius API client (host discovery, search, trending, stream)
-    types.ts          shared types
-  styles/
-    fonts.css         Figtree (Circular stand-in)
-    theme.css         Spotify-dark color tokens
-    app.css           component styles
+    App.tsx             layout, sidebar, most views, now-playing bar
+    player.tsx          PlayerProvider — audio engine, queue, persistence
+    listen.tsx          Listen Along: sync, chat, reactions, requests
+    auth.tsx            Clerk sign-in behind the app's auth context
+    features/           recap, mixes, friends, local files, room panel, settings
+  lib/                  web-side helpers (recap, mixes, lastfm, local files, pwa…)
+  styles/               fonts, theme tokens, component styles
+core/                   platform-neutral logic: Audius, YouTube, cloud, listen, social
+electron/               desktop shell: main, tray, mini player, local-file scheme, updater
+server/ + api/          local backend and the matching Vercel functions
+supabase/               database schema and migrations
+public/sw.js            service worker for the installable web app
 ```
 
 ## Notes

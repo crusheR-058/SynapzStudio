@@ -121,9 +121,29 @@ jobs:
             echo "signing: none (unsigned build)"
           fi
 
+      # Sign-in is Clerk, and its publishable key is compiled into the bundle.
+      # Without it the app never leaves the loading screen — and because every
+      # installed copy auto-updates, shipping that build would break the app for
+      # everyone at once. So a missing key stops the release here, before any
+      # installer exists to publish.
+      - name: Require the Clerk publishable key
+        shell: bash
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$VITE_CLERK_PUBLISHABLE_KEY" ]; then
+            echo "::error::Repository variable VITE_CLERK_PUBLISHABLE_KEY is not set. Add it under Settings > Secrets and variables > Actions > Variables, then re-run this workflow."
+            exit 1
+          fi
+
       - name: Build installer (no publish)
         shell: bash
         env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          # Optional: one-click Last.fm for everyone on this build. Empty is fine
+          # — listeners can enter their own key in Settings.
+          VITE_LASTFM_API_KEY: ${{ vars.VITE_LASTFM_API_KEY }}
+          VITE_LASTFM_API_SECRET: ${{ vars.VITE_LASTFM_API_SECRET }}
           # Baked into the client bundle so the packaged app has cloud sign-in
           # (Supabase). Both are public-safe (anon key is protected by RLS).
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}

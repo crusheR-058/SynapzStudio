@@ -55,6 +55,18 @@ sync, test locally, and deploy.
 
 ---
 
+### After the base schema
+
+Two more files in [`supabase/`](supabase/), run in this order in the SQL editor:
+
+1. [`clerk-migration.sql`](supabase/clerk-migration.sql) — moves Row-Level
+   Security from Supabase Auth to Clerk. Read its header first: it needs Clerk
+   added as a third-party auth provider, and it tells you what to back up.
+2. [`social.sql`](supabase/social.sql) — the `follows` and `listening_activity`
+   tables behind the Friends tab. It depends on `current_uid()` from step 1.
+   Until it has been run, the Friends tab reports that it is unavailable;
+   nothing else is affected.
+
 ### Notes
 - The **anon key is meant to be public** (it ships in the frontend). Your data is
   protected by Row-Level Security in the database, not by hiding the key.
