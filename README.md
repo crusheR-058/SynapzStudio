@@ -179,13 +179,11 @@ Base64-encode a cert with `base64 -w0 cert.pfx` (Linux) or
 - **Sign-in is Clerk** (`VITE_CLERK_PUBLISHABLE_KEY`). The key is baked in at
   build time, so it must be set wherever a build runs: `.env.local` for dev,
   the Vercel project for the website, and the `VITE_CLERK_PUBLISHABLE_KEY`
-  repository variable for desktop releases. A build without it cannot load —
-  the release workflow refuses to build one.
-- **Data is Supabase** (Postgres + Row-Level Security). See
-  [`SUPABASE.md`](SUPABASE.md) for setup, then run, in order:
-  [`supabase/schema.sql`](supabase/schema.sql),
-  [`supabase/clerk-migration.sql`](supabase/clerk-migration.sql) and
-  [`supabase/social.sql`](supabase/social.sql) (friends).
+  repository variable for desktop releases. A build without it still plays
+  music but has no sign-in; the release workflow refuses to ship one.
+- **Data is Supabase** (Postgres + Row-Level Security).
+  [`SUPABASE.md`](SUPABASE.md) has the setup and the ordered checklist for the
+  move to Clerk, including carrying existing accounts' libraries across.
 
 ## Features
 

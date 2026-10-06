@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { useAuth as useClerkAuth, useClerk, useUser } from '@clerk/react'
 import { setUserIdSource } from '../../core/supabase'
-import { supabaseEnabled } from '../lib/supabase'
+import { cloudClaimLegacyAccount } from '../lib/cloud'
 import type { User } from '../lib/api'
 
 /**
@@ -29,13 +29,17 @@ import type { User } from '../lib/api'
 
 type AuthMode = 'login' | 'signup'
 
+// Longest a sign-in will wait on the legacy-library claim before carrying on.
+const CLAIM_TIMEOUT_MS = 4000
+const claimedKey = (id: string) => `synapz:claimed:${id}`
+
 interface AuthValue {
   user: User | null
   loading: boolean
-  loginWithGoogle: () => Promise<void>
   logout: () => Promise<void>
   rename: (name: string) => Promise<void>
-  googleEnabled: boolean
+  /** False when this build has no Clerk key — sign-in is simply unavailable. */
+  authEnabled: boolean
   // Auth modal (sign-in / sign-up popup rendered inside the window)
   authOpen: boolean
   authMode: AuthMode
@@ -67,8 +71,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUserIdSource(null)
   }, [userId])
 
+  // Someone who had an account before the move to Clerk arrives with a new id,
+  // and their library is still filed under the old one. Re-key it BEFORE the
+  // app is told anyone is signed in: the player and the playlists each load
+  // the cloud library the moment `user` appears, and would otherwise read an
+  // empty one and show it.
+  //
+  // Asked once per account per device. A failed ask (offline, or the function
+  // not installed yet) isn't remembered, so it is retried next launch; either
+  // way sign-in carries on after a short wait rather than hanging on it.
+  const [settledFor, setSettledFor] = useState<string | null>(null)
+  useEffect(() => {
+    if (!userId) {
+      setSettledFor(null)
+      return
+    }
+    let done = false
+    try {
+      done = localStorage.getItem(claimedKey(userId)) === '1'
+    } catch {
+      /* private mode — just ask again */
+    }
+    if (done) {
+      setSettledFor(userId)
+      return
+    }
+    let live = true
+    const settle = () => live && setSettledFor(userId)
+    const timer = window.setTimeout(settle, CLAIM_TIMEOUT_MS)
+    void cloudClaimLegacyAccount().then((answered) => {
+      if (answered) {
+        try {
+          localStorage.setItem(claimedKey(userId), '1')
+        } catch {
+          /* ignore */
+        }
+      }
+      window.clearTimeout(timer)
+      settle()
+    })
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [userId])
+
   const user: User | null =
-    isSignedIn && clerkUser
+    isSignedIn && clerkUser && settledFor === userId
       ? {
           name:
             clerkUser.fullName ||
@@ -82,14 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           createdAt: clerkUser.createdAt ? clerkUser.createdAt.getTime() : null,
         }
       : null
-
-  const loginWithGoogle = useCallback(async () => {
-    // Clerk's modal renders in-page, which the Electron window handles fine —
-    // unlike Google's own OAuth page, which refuses to load in an embedded
-    // browser and is why the old flow had to shell out to the system browser.
-    clerk.openSignIn({})
-    setAuthOpen(false)
-  }, [clerk])
 
   const logout = useCallback(async () => {
     await clerk.signOut()
@@ -120,16 +161,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthValue = {
     user,
     loading: !isLoaded,
-    loginWithGoogle,
     logout,
     rename,
-    // Sign-in needs Clerk to be configured; cloud sync additionally needs
-    // Supabase. Reported together because the UI offers them as one thing.
-    googleEnabled: supabaseEnabled && isLoaded,
+    authEnabled: true,
     authOpen,
     authMode,
     openAuth,
     closeAuth,
+  }
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+/**
+ * Stand-in for AuthProvider when the build has no Clerk publishable key.
+ *
+ * Clerk's hooks throw outside a ClerkProvider, and a ClerkProvider with no key
+ * never finishes loading — which used to leave the whole app on its loading
+ * screen. Listening needs no account, so a keyless build should still be a
+ * working player: everyone is a guest, and asking to sign in opens a note
+ * saying it isn't available instead of doing nothing.
+ */
+export function GuestAuthProvider({ children }: { children: ReactNode }) {
+  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthMode>('login')
+  const value: AuthValue = {
+    user: null,
+    loading: false,
+    logout: async () => {},
+    rename: async () => {},
+    authEnabled: false,
+    authOpen,
+    authMode,
+    openAuth: (mode: AuthMode = 'login') => {
+      setAuthMode(mode)
+      setAuthOpen(true)
+    },
+    closeAuth: () => setAuthOpen(false),
   }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

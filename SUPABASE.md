@@ -55,17 +55,43 @@ sync, test locally, and deploy.
 
 ---
 
-### After the base schema
+### Moving sign-in to Clerk
 
-Two more files in [`supabase/`](supabase/), run in this order in the SQL editor:
+Identity is Clerk; the data stays here. Do these in order — the app is safe to
+deploy only after the last one.
 
-1. [`clerk-migration.sql`](supabase/clerk-migration.sql) — moves Row-Level
-   Security from Supabase Auth to Clerk. Read its header first: it needs Clerk
-   added as a third-party auth provider, and it tells you what to back up.
-2. [`social.sql`](supabase/social.sql) — the `follows` and `listening_activity`
-   tables behind the Friends tab. It depends on `current_uid()` from step 1.
-   Until it has been run, the Friends tab reports that it is unavailable;
-   nothing else is affected.
+**In the Clerk dashboard**
+1. *Integrations → Supabase → Activate.* This adds the `role: authenticated`
+   claim Supabase expects on every session token.
+2. *Sessions → Customize session token*, add:
+   ```json
+   {
+     "email": "{{user.primary_email_address}}",
+     "email_verified": "{{user.email_verified}}"
+   }
+   ```
+   Needed by step 5: the email is the only link between a person's old account
+   and their new one.
+
+**In the Supabase dashboard**
+3. *Authentication → Sign In / Providers → Third-Party Auth → Add Clerk*, and
+   paste your Clerk domain. Without it Supabase rejects Clerk's tokens and every
+   query comes back empty.
+4. SQL editor: take the backup described at the top of
+   [`clerk-migration.sql`](supabase/clerk-migration.sql), then run that file. It
+   moves Row-Level Security from Supabase Auth to Clerk.
+5. Run [`clerk-claim-legacy.sql`](supabase/clerk-claim-legacy.sql). People who
+   had an account before get a new id from Clerk; this is what hands them their
+   existing likes, playlists and history on first sign-in. Skip it and the
+   switch looks, to them, like it deleted their library.
+6. Run [`social.sql`](supabase/social.sql) — the tables behind the Friends tab.
+   Until then that tab reports that it is unavailable; nothing else is affected.
+
+**Where builds run**
+7. Set `VITE_CLERK_PUBLISHABLE_KEY` in the Vercel project (Production) and as a
+   GitHub Actions repository variable. It is compiled into the bundle, so a key
+   that only exists in `.env.local` reaches neither the website nor the desktop
+   installers. A build without it runs, but as a guest-only player.
 
 ### Notes
 - The **anon key is meant to be public** (it ships in the frontend). Your data is

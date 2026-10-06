@@ -17,11 +17,21 @@ if (isDesktopShell) {
 
 registerServiceWorker()
 
+// Compiled in at build time. A build made where the key isn't set (a fork, or
+// a CI job missing its variable) has none — and a ClerkProvider without one
+// never finishes loading, so that build would sit on its loading screen. It
+// runs as a guest-only player instead.
+const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined
+
 createRoot(document.getElementById('root')!).render(
   <>
-    <ClerkProvider afterSignOutUrl="/">
-      <App />
-    </ClerkProvider>
+    {clerkKey ? (
+      <ClerkProvider publishableKey={clerkKey} afterSignOutUrl="/">
+        <App />
+      </ClerkProvider>
+    ) : (
+      <App auth={false} />
+    )}
     {/* Vercel's script only exists on the hosted site. In the desktop app the
         request falls through to the local server's page fallback, comes back
         as HTML, and logs a syntax error on every launch. */}
