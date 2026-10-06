@@ -67,7 +67,7 @@ import {
   Youtube,
 } from 'lucide-react'
 import { PlayerProvider, usePlayer } from './player'
-import { AuthProvider, GuestAuthProvider, useAuth } from './auth'
+import { AuthProvider, useAuth } from './auth'
 import { PlaylistsProvider, usePlaylists, type UserPlaylist } from './playlists'
 import type { Playlist, Track, View } from '../lib/types'
 import { activeLineIndex, fetchLyrics, hasDevanagari, romanize, type Lyrics } from '../lib/lyrics'
@@ -4596,12 +4596,15 @@ function CenterColumn() {
 
 /* -------------------------------------------------------------- login */
 
-// Clerk draws its own sign-in window, so this popup has one job left: saying
-// that sign-in is unavailable in a build that was made without a Clerk key
-// (see GuestAuthProvider). In a normal build it never opens.
+// Sign in / sign up popup, rendered INSIDE the app window (not a separate page
+// or tab). Opened from the sidebar's "Log in / Sign up" buttons; auto-closes the
+// moment a session exists (handled in AuthProvider).
 function AuthModal() {
-  const { authOpen, closeAuth, authEnabled } = useAuth()
+  const { authOpen, authMode, closeAuth, loginWithGoogle, googleEnabled } = useAuth()
+  const [authErr, setAuthErr] = useState('')
+  const [busy, setBusy] = useState(false)
 
+  // Esc closes the popup.
   useEffect(() => {
     if (!authOpen) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeAuth()
@@ -4609,7 +4612,20 @@ function AuthModal() {
     return () => window.removeEventListener('keydown', onKey)
   }, [authOpen, closeAuth])
 
-  if (!authOpen || authEnabled) return null
+  if (!authOpen) return null
+  const signup = authMode === 'signup'
+
+  const doGoogle = async () => {
+    setAuthErr('')
+    setBusy(true)
+    try {
+      await loginWithGoogle()
+    } catch (e: any) {
+      // e.g. provider not enabled in Supabase, or a network error before redirect.
+      setAuthErr(e?.message || 'Sign-in failed. Please try again.')
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="authmodal" onClick={closeAuth}>
@@ -4618,12 +4634,46 @@ function AuthModal() {
           <X size={18} />
         </button>
         <div className="login__brand">
-          <h1>Sign-in isn’t available</h1>
-          <p>
-            This copy of Synapz was built without account support. Everything still plays, and
-            your likes and playlists are kept on this device.
-          </p>
+          <svg viewBox="0 0 64 64" width="44" height="44" aria-hidden>
+            <defs>
+              <linearGradient id="login-g" x1="8" y1="6" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stopColor="#ff3b4e" />
+                <stop offset="1" stopColor="#b00d22" />
+              </linearGradient>
+            </defs>
+            <circle cx="32" cy="32" r="32" fill="url(#login-g)" />
+            <g stroke="#0f1115" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" fill="#0f1115">
+              <path d="M14 41 L24 26 L33 35 L42 24 L50 31" fill="none" />
+              <circle cx="14" cy="41" r="3.6" />
+              <circle cx="24" cy="26" r="4" />
+              <circle cx="33" cy="35" r="3.4" />
+              <circle cx="42" cy="24" r="4" />
+              <circle cx="50" cy="31" r="3.6" />
+            </g>
+          </svg>
+          <h1>{signup ? 'Create your account' : 'Welcome back'}</h1>
+          <p>Sign in with Google to save your likes, playlists &amp; listening stats across devices.</p>
         </div>
+
+        {googleEnabled ? (
+          <>
+            <button className="gbtn" onClick={doGoogle} disabled={busy}>
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+                <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
+                <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
+                <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" />
+                <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
+              </svg>
+              {busy ? 'Connecting…' : 'Continue with Google'}
+            </button>
+            {authErr && <p className="login__err">{authErr}</p>}
+          </>
+        ) : (
+          <p className="login__note">
+            Sign-in isn’t configured yet. Set <code>VITE_SUPABASE_URL</code> &amp;{' '}
+            <code>VITE_SUPABASE_ANON_KEY</code> to enable it.
+          </p>
+        )}
       </div>
     </div>
   )
@@ -5102,7 +5152,7 @@ function SynapzIntro() {
   )
 }
 
-export default function App({ auth = true }: { auth?: boolean }) {
+export default function App() {
   useEffect(() => {
     warmup()
     try {
@@ -5111,13 +5161,10 @@ export default function App({ auth = true }: { auth?: boolean }) {
       /* noop */
     }
   }, [])
-  // `auth={false}` is a build with no Clerk key: run as a guest-only player
-  // rather than mount Clerk hooks with no provider above them.
-  const Provider = auth ? AuthProvider : GuestAuthProvider
   return (
-    <Provider>
+    <AuthProvider>
       <SynapzIntro />
       <Gate />
-    </Provider>
+    </AuthProvider>
   )
 }

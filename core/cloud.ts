@@ -15,25 +15,6 @@ async function uid(): Promise<string | null> {
   return currentUserId()
 }
 
-/* ------------------------------------------------------- legacy account --- */
-
-/**
- * Re-key a pre-Clerk library to the signed-in Clerk user (see
- * supabase/clerk-claim-legacy.sql). Returns true once the database has answered
- * — whether or not there was anything to move — and false if it couldn't be
- * asked (offline, or the function isn't installed yet), so the caller knows to
- * try again another time.
- */
-export async function cloudClaimLegacyAccount(): Promise<boolean> {
-  if (!sb()) return false
-  try {
-    const { error } = await sb()!.rpc('claim_legacy_account')
-    return !error
-  } catch {
-    return false
-  }
-}
-
 /* --------------------------------------------------------------- likes --- */
 
 export async function cloudFetchLikes(): Promise<Track[]> {

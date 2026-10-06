@@ -27,26 +27,8 @@ export function supabaseEnabled(): boolean {
 
 // ------------------------------------------------------------ identity ---
 
-/**
- * Who is signed in.
- *
- * Supabase's own `auth.getUser()` cannot answer this once the client is built
- * with an `accessToken` callback — supabase-js disables the entire auth
- * namespace in that mode, which is exactly the mode third-party auth (Clerk)
- * requires. So the id is injected, the same way the client itself is.
- *
- * Platforms that still use Supabase Auth register nothing and fall through to
- * getUser(), which is what lets the web app move to Clerk while mobile keeps
- * signing in through Supabase.
- */
-let userIdSource: (() => string | null) | null = null
-
-export function setUserIdSource(fn: (() => string | null) | null): void {
-  userIdSource = fn
-}
-
+/** The signed-in user's id, or null. One place for core to ask who is here. */
 export async function currentUserId(): Promise<string | null> {
-  if (userIdSource) return userIdSource()
   const c = client
   if (!c) return null
   try {

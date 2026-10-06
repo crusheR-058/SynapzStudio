@@ -8,7 +8,7 @@ A Spotify-style music streaming app built with **React + TypeScript + Vite**. It
 runs in the browser (installable as a PWA) and as a desktop app for Windows and
 macOS. Unlike a mockup, it plays **real, full-length songs**.
 
-Listening needs no account. Signing in (Clerk) is optional and adds cloud sync —
+Listening needs no account. Signing in with Google is optional and adds cloud sync —
 likes, playlists and history across devices — plus friends and Listen Along.
 
 Two sources power playback:
@@ -176,14 +176,10 @@ Base64-encode a cert with `base64 -w0 cert.pfx` (Linux) or
 
 - **No login wall.** Everything plays signed out; likes, playlists, stats and
   settings are kept in the browser.
-- **Sign-in is Clerk** (`VITE_CLERK_PUBLISHABLE_KEY`). The key is baked in at
-  build time, so it must be set wherever a build runs: `.env.local` for dev,
-  the Vercel project for the website, and the `VITE_CLERK_PUBLISHABLE_KEY`
-  repository variable for desktop releases. A build without it still plays
-  music but has no sign-in; the release workflow refuses to ship one.
-- **Data is Supabase** (Postgres + Row-Level Security).
-  [`SUPABASE.md`](SUPABASE.md) has the setup and the ordered checklist for the
-  move to Clerk, including carrying existing accounts' libraries across.
+- **Sign-in and data are Supabase** — Google sign-in through Supabase Auth, and
+  Postgres with Row-Level Security so each account only sees its own rows. See
+  [`SUPABASE.md`](SUPABASE.md) for the one-time setup, including
+  [`supabase/social.sql`](supabase/social.sql) for the Friends tab.
 
 ## Features
 
@@ -233,7 +229,7 @@ src/
     App.tsx             layout, sidebar, most views, now-playing bar
     player.tsx          PlayerProvider — audio engine, queue, persistence
     listen.tsx          Listen Along: sync, chat, reactions, requests
-    auth.tsx            Clerk sign-in behind the app's auth context
+    auth.tsx            Supabase sign-in behind the app's auth context
     features/           recap, mixes, friends, local files, room panel, settings
   lib/                  web-side helpers (recap, mixes, lastfm, local files, pwa…)
   styles/               fonts, theme tokens, component styles

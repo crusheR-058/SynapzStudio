@@ -7,10 +7,9 @@
 // adding a stranger by their link shows you nothing until they add you too, and
 // no approval queue is needed to keep it that way.
 //
-// Names ride on the rows themselves. Clerk owns profiles and Supabase cannot
-// read them, so each side stores the display name it knows at the time: the
-// follower's own name, and the name the invite link carried for the person
-// being added.
+// Names ride on the rows themselves. A profile is readable only by its owner,
+// so each side stores the display name it knows at the time: the follower's
+// own name, and the name the invite link carried for the person being added.
 //
 // Every call is best-effort and returns empty on failure, like core/cloud. The
 // one thing surfaced is "the tables don't exist yet" — that is a setup problem
